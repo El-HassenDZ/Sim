@@ -43,3 +43,6 @@ __pycache__/
 *-test.log
 gate1-validation.json
 mtcaodv-gate1-validation.json
+
+# Gate evidence is committed deliberately
+!MTC-AODV-ns3.48/evidence/**

@@ -407,13 +407,60 @@ The R-04 probe:
 This manifest is accepted by `validate_manifest` without complaint, which is
 the concrete demonstration of finding R-04.
 
-### 7.4 Conclusion of the build gate
+### 7.4 Unit tests and campaign validator
 
-The package's Gate 1B entry criteria are **met for compilation and for
-deterministic selection**. Every reproducibility property the README asserts
-was executed and holds. The remaining entry criterion — both C++ suites
-registered and passing under `./test.py` — requires the full ns-3 test-runner
-link and is recorded separately.
+Both suites register and pass. Raw logs in `evidence/gate1a/`.
+
+```text
+$ ./test.py --list | grep mtcaodv
+unit                 mtcaodv-attack-manager
+unit                 mtcaodv-blackhole-behavior
+
+$ ./test.py -s mtcaodv-attack-manager --verbose
+[1/1] PASS: TestSuite mtcaodv-attack-manager
+1 of 1 tests passed (1 passed, 0 skipped, 0 failed, 0 crashed, 0 valgrind errors)
+
+$ ./test.py -s mtcaodv-blackhole-behavior --verbose
+[1/1] PASS: TestSuite mtcaodv-blackhole-behavior
+1 of 1 tests passed (1 passed, 0 skipped, 0 failed, 0 crashed, 0 valgrind errors)
+```
+
+The Python campaign validator completes end-to-end against the built tree:
+
+```text
+$ python3 experiments/validate_gate1.py --ns3-root <ns3> --node-count 100 \
+      --seed 12345 --run 1 --attack-stream 73001 --output <report>.json
+Gate 1A validation PASS
+```
+
+with `status: "PASS"`, four ratio records, exact counts 5 / 10 / 20 / 30, and
+`deterministic_replay: true` on every one.
+
+### 7.5 Gate 0 baseline, and a correction to its command
+
+The blueprint's Gate 0 (§7) specifies `./test.py -s aodv`. **No suite by that
+name exists in ns-3.48**; the command fails with "an unknown test suite name
+was requested" and exit status 2. The AODV suites are:
+
+```text
+unit                 routing-aodv
+unit                 aodv-routing-id-cache
+system               routing-aodv-loopback
+system               routing-aodv-regression
+```
+
+All four pass on this tree with `contrib/mtcaodv` installed, which satisfies
+the Gate 0 exit criterion (a clean AODV baseline) and confirms that adding the
+module perturbs nothing in `src/aodv`. The blueprint should be amended to name
+the four suites.
+
+### 7.6 Conclusion of the build gate
+
+**Every Gate 1B entry criterion stated in the package README is met**: the
+module library and example compile under ns-3.48, both C++ suites are
+registered and pass, and the Python validator confirms exact deterministic
+selection. Every reproducibility property the README asserts was executed and
+holds.
 
 The `COMPILATION_FEEDBACK_TEMPLATE.md` round-trip is, for this gate,
 unnecessary: the answer is a clean build.

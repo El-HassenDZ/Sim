@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "gate": "1A",
+  "status": "PASS",
+  "coordinates": {
+    "node_count": 100,
+    "seed": 12345,
+    "run": 1,
+    "attack_stream": 73001
+  },
+  "results": [
+    {
+      "attacker_ratio": 0.05,
+      "expected_count": 5,
+      "observed_count": 5,
+      "attacker_node_ids": [
+        2,
+        3,
+        24,
+        75,
+        93
+      ],
+      "deterministic_replay": true
+    },
+    {
+      "attacker_ratio": 0.1,
+      "expected_count": 10,
+      "observed_count": 10,
+      "attacker_node_ids": [
+        2,
+        3,
+        21,
+        24,
+        36,
+        42,
+        47,
+        59,
+        75,
+        93
+      ],
+      "deterministic_replay": true
+    },
+    {
+      "attacker_ratio": 0.2,
+      "expected_count": 20,
+      "observed_count": 20,
+      "attacker_node_ids": [
+        2,
+        3,
+        13,
+        20,
+        21,
+        24,
+        30,
+        33,
+        34,
+        36,
+        40,
+        42,
+        47,
+        51,
+        55,
+        59,
+        75,
+        80,
+        83,
+        93
+      ],
+      "deterministic_replay": true
+    },
+    {
+      "attacker_ratio": 0.3,
+      "expected_count": 30,
+      "observed_count": 30,
+      "attacker_node_ids": [
+        2,
+        3,
+        8,
+        13,
+        20,
+        21,
+        24,
+        29,
+        30,
+        33,
+        34,
+        36,
+        39,
+        40,
+        42,
+        47,
+        51,
+        53,
+        55,
+        59,
+        60,
+        67,
+        75,
+        80,
+        81,
+        83,
+        90,
+        93,
+        94,
+        97
+      ],
+      "deterministic_replay": true
+    }
+  ]
+}

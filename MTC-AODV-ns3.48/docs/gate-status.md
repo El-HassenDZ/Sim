@@ -56,6 +56,14 @@ The divergence is documented in the code and is acceptable. The manuscript
 should nevertheless state the half-up convention explicitly, because
 `round()` in several languages is half-to-even.
 
+## 3b. Correction to the Gate 0 command
+
+The blueprint's Gate 0 specifies `./test.py -s aodv`. That suite name does not
+exist in ns-3.48 and the command exits 2. The four real suites are
+`routing-aodv`, `aodv-routing-id-cache`, `routing-aodv-loopback` and
+`routing-aodv-regression`; all four pass with `contrib/mtcaodv` installed
+(`evidence/gate1a/aodv-baseline-test.log`).
+
 ## 4. Open deviations to record before Gate 1B
 
 1. `MtcAodvHelper` is absent (blueprint Gate 1 step 3).
@@ -66,7 +74,8 @@ should nevertheless state the half-up convention explicitly, because
 3. The package asserts two reproducibility properties that nothing tests:
    nested attacker sets across ratios, and changed selections across run
    numbers. See `docs/gate1a-review.md`, findings R-07 and R-08.
-4. Licence: the module files carry `SPDX-License-Identifier: GPL-2.0-only`,
+4. The blueprint's Gate 0 command names a non-existent test suite (§3b).
+5. Licence: the module files carry `SPDX-License-Identifier: GPL-2.0-only`,
    which is correct for an ns-3 contributed module. The repository root
    currently carries an unrelated MIT `LICENSE`. This must be resolved before
    any publication or distribution.
