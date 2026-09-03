@@ -52,7 +52,10 @@ class FullBlackholePolicyTestCase : public TestCase
         NS_TEST_EXPECT_MSG_EQ(behavior->ShouldForgeRouteReply(Seconds(9), true),
                               false,
                               "The policy forged a reply during the warm-up period");
-        NS_TEST_EXPECT_MSG_EQ(behavior->ShouldDropTransitPacket(Seconds(9), false, false),
+        PacketDropContext warmUpTransit;
+        warmUpTransit.observationTime = Seconds(9);
+        warmUpTransit.isTransit = true;
+        NS_TEST_EXPECT_MSG_EQ(behavior->ShouldDropPacket(warmUpTransit),
                               false,
                               "The policy dropped data during the warm-up period");
 
@@ -91,15 +94,39 @@ class FullBlackholePolicyTestCase : public TestCase
 
         // Transit data is the attack target, whereas control traffic is kept so
         // the node can continue attracting routes and exchanging evidence.
-        NS_TEST_EXPECT_MSG_EQ(behavior->ShouldDropTransitPacket(Seconds(11), false, false),
+        PacketDropContext activeTransit;
+        activeTransit.observationTime = Seconds(11);
+        activeTransit.isTransit = true;
+        NS_TEST_EXPECT_MSG_EQ(behavior->ShouldDropPacket(activeTransit),
                               true,
                               "An active full Blackhole forwarded transit data");
-        NS_TEST_EXPECT_MSG_EQ(behavior->ShouldDropTransitPacket(Seconds(11), true, false),
+
+        PacketDropContext routingControl = activeTransit;
+        routingControl.isRoutingControl = true;
+        NS_TEST_EXPECT_MSG_EQ(behavior->ShouldDropPacket(routingControl),
                               false,
                               "The policy dropped protected AODV control traffic");
-        NS_TEST_EXPECT_MSG_EQ(behavior->ShouldDropTransitPacket(Seconds(11), false, true),
+
+        PacketDropContext securityControl = activeTransit;
+        securityControl.isSecurityControl = true;
+        NS_TEST_EXPECT_MSG_EQ(behavior->ShouldDropPacket(securityControl),
                               false,
                               "The policy dropped protected security-control traffic");
+
+        // The transit precondition is a safety property, not a policy option:
+        // an attacker that discarded its own traffic would model a broken node
+        // and the loss would be misattributed to the attack.
+        PacketDropContext locallyOriginated = activeTransit;
+        locallyOriginated.isTransit = false;
+        NS_TEST_EXPECT_MSG_EQ(behavior->ShouldDropPacket(locallyOriginated),
+                              false,
+                              "The policy dropped a packet that was not in transit");
+
+        // A default-constructed context must also be refused, so a caller that
+        // forgets to state the transit property obtains the benign decision.
+        NS_TEST_EXPECT_MSG_EQ(behavior->ShouldDropPacket(PacketDropContext()),
+                              false,
+                              "A context with no stated transit property caused a drop");
         Simulator::Destroy();
     }
 };

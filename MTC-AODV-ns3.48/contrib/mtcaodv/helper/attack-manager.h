@@ -8,6 +8,7 @@
 #define MTC_AODV_ATTACK_MANAGER_H
 
 #include "ns3/node-container.h"
+#include "ns3/node.h"
 #include "ns3/ptr.h"
 #include "ns3/random-variable-stream.h"
 
@@ -120,6 +121,27 @@ class AttackManager
     AttackSelectionResult SelectAttackers(const NodeContainer& nodes,
                                           double attackerRatio,
                                           const std::set<uint32_t>& excludedNodeIds);
+
+    /**
+     * @brief Split a population into honest and malicious containers.
+     *
+     * The two containers are what a scenario hands to `InternetStackHelper`:
+     * the honest set receives the stock `AodvHelper`, the malicious set
+     * receives `BlackholeAodvHelper`. Performing the split here keeps the
+     * mapping from a selection record to installed behaviour in one place, so
+     * a scenario cannot install an attacker the manifest does not declare.
+     *
+     * @param nodes All MANET nodes, in the order used for selection.
+     * @param selection A validated selection over that same population.
+     * @param honestNodes Receives every node absent from the selection.
+     * @param attackerNodes Receives every node named by the selection.
+     * @throws std::invalid_argument if the selection does not describe this
+     *         population, or names an identifier the population lacks.
+     */
+    static void PartitionByAttackers(const NodeContainer& nodes,
+                                     const AttackSelectionResult& selection,
+                                     NodeContainer& honestNodes,
+                                     NodeContainer& attackerNodes);
 
   private:
     /**

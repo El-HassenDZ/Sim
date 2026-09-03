@@ -14,18 +14,18 @@ itself "Gate 1A" and covers a subset. The mapping is:
 | Blueprint Gate 1 step | Delivered in 1A | Location |
 |---|---|---|
 | 1. `contrib/mtcaodv/CMakeLists.txt` with `build_lib` | Yes | `contrib/mtcaodv/CMakeLists.txt` |
-| 2. Import ns-3.48 routing logic under renamed classes | **No** | deferred to 1B |
-| 3. `MtcAodvHelper::Copy/Create/Set/AssignStreams` | **No** | not present, not mentioned in the package README |
+| 2. Import ns-3.48 routing logic under renamed classes | **Gate 1B** | `model/blackhole-aodv-routing-protocol.{h,cc}` |
+| 3. Helper `Copy/Create/Set/AssignStreams` | **Gate 1B** | `helper/blackhole-aodv-helper.{h,cc}` (malicious side; the defensive `MtcAodvHelper` follows in a later gate) |
 | 4. Deterministic attacker selection without replacement | Yes | `helper/attack-manager.{h,cc}` |
-| 5. Forged attractive RREP and transit-data dropping | **Policy only** | `model/blackhole-behavior.{h,cc}`; no RREP is emitted and no packet is dropped |
+| 5. Forged attractive RREP and transit-data dropping | **Gate 1B** | policy in `model/blackhole-behavior.{h,cc}`; the two routing hooks in the forked protocol |
 | 6. Assert exact counts for all mandatory ratios | Yes | `test/attack-manager-test-suite.cc`, `experiments/validate_gate1.py` |
 
-Steps 2 and 3 are the two that carry integration risk. Neither is exercised.
-The package README documents the deferral of step 5's routing hooks; it does
-not document the absence of step 3. That omission matters because Gate 1B's
-stated entry criteria ("the module library and example compile") are satisfied
-by a module that contains no helper, so the criteria as written do not
-guarantee that the helper contract compiles before the AODV fork lands.
+All six steps are now implemented. Steps 2, 3 and 5 were closed in Gate 1B;
+see `gate1b-record.md`. The Gate 1A observation stands as a record of how the
+gate boundary was drawn: its stated entry criteria for Gate 1B ("the module
+library and example compile") were satisfiable by a module containing no
+helper at all, so the criteria as written did not guarantee what they appeared
+to guarantee.
 
 ## 2. Blueprint directory tree versus files on disk
 
@@ -66,14 +66,18 @@ exist in ns-3.48 and the command exits 2. The four real suites are
 
 ## 4. Open deviations to record before Gate 1B
 
-1. `MtcAodvHelper` is absent (blueprint Gate 1 step 3).
-2. `AttackManager` and `AttackBehavior` are never connected: nothing in the
-   package installs a `BlackholeBehavior` onto the node identifiers that
-   `AttackManager` selects. Both halves compile; the seam between them does
-   not exist yet.
+1. ~~`MtcAodvHelper` is absent~~ — closed in Gate 1B by `BlackholeAodvHelper`.
+   The defensive helper is still outstanding and belongs to a later gate.
+2. ~~`AttackManager` and `AttackBehavior` are never connected~~ — closed in
+   Gate 1B by `AttackManager::PartitionByAttackers` plus helper composition.
 3. The package asserts two reproducibility properties that nothing tests:
    nested attacker sets across ratios, and changed selections across run
-   numbers. See `docs/gate1a-review.md`, findings R-07 and R-08.
+   numbers. Both were verified by execution (`gate1a-review.md` §7.3) but
+   neither is covered by a test suite. Still open.
+3b. The Gate 1B measurement scenario has no valid baseline: the no-attack PDR
+   is 0.052 as parameterised, and the regime is marginal connectivity rather
+   than congestion. See `gate1b-record.md` §6 and `phase1-design-review.md`
+   D-09. Blocks any confirmatory campaign.
 4. The blueprint's Gate 0 command names a non-existent test suite (§3b).
 5. Licence: the module files carry `SPDX-License-Identifier: GPL-2.0-only`,
    which is correct for an ns-3 contributed module. The repository root

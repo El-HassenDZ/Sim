@@ -127,13 +127,20 @@ BlackholeBehavior::CreateForgedReplyProfile(uint32_t observedDestinationSequence
 }
 
 bool
-BlackholeBehavior::ShouldDropTransitPacket(Time now,
-                                           bool isRoutingControl,
-                                           bool isSecurityControl) const
+BlackholeBehavior::ShouldDropPacket(const PacketDropContext& context) const
 {
+    // A Blackhole attracts traffic and then discards what it was trusted to
+    // relay.  Discarding its own traffic would model a broken node instead,
+    // and the loss would be misattributed to the attack.  This guard is first
+    // because it is a safety property, not a policy option.
+    if (!context.isTransit)
+    {
+        return false;
+    }
+
     // Before activation the configured node behaves honestly, preserving a
     // clean warm-up interval for routing-table formation.
-    if (!IsActive(now) || !m_dropTransitData)
+    if (!IsActive(context.observationTime) || !m_dropTransitData)
     {
         return false;
     }
@@ -141,7 +148,7 @@ BlackholeBehavior::ShouldDropTransitPacket(Time now,
     // Control-plane preservation lets a Blackhole advertise and maintain
     // routes.  Dropping these packets would model a disconnected node rather
     // than an adversary that attracts and then discards transit data.
-    if (m_preserveControlPlane && (isRoutingControl || isSecurityControl))
+    if (m_preserveControlPlane && (context.isRoutingControl || context.isSecurityControl))
     {
         return false;
     }

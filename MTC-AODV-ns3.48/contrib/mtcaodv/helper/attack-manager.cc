@@ -207,5 +207,51 @@ AttackManager::SelectAttackers(const NodeContainer& nodes,
     return result;
 }
 
+void
+AttackManager::PartitionByAttackers(const NodeContainer& nodes,
+                                    const AttackSelectionResult& selection,
+                                    NodeContainer& honestNodes,
+                                    NodeContainer& attackerNodes)
+{
+    // Revalidating is cheap and prevents a hand-edited or partially copied
+    // record from silently producing a different attack intensity than the
+    // one the manifest reports.
+    selection.Validate();
+
+    if (nodes.GetN() != selection.nodeCount)
+    {
+        throw std::invalid_argument("selection does not describe this node population");
+    }
+
+    const std::set<uint32_t> attackerIds(selection.attackerNodeIds.begin(),
+                                         selection.attackerNodeIds.end());
+    std::size_t matchedAttackers = 0;
+
+    // One pass over the population. The invariant is that every visited node
+    // has been placed in exactly one of the two containers, so the two sizes
+    // always sum to the number of nodes visited so far.
+    for (auto nodeIterator = nodes.Begin(); nodeIterator != nodes.End(); ++nodeIterator)
+    {
+        Ptr<Node> node = *nodeIterator;
+
+        if (attackerIds.find(node->GetId()) != attackerIds.end())
+        {
+            attackerNodes.Add(node);
+            ++matchedAttackers;
+        }
+        else
+        {
+            honestNodes.Add(node);
+        }
+    }
+
+    // A selection naming an identifier this population does not contain would
+    // otherwise yield a silently smaller attacker set.
+    if (matchedAttackers != selection.attackerNodeIds.size())
+    {
+        throw std::invalid_argument("selection names node identifiers absent from the population");
+    }
+}
+
 } // namespace mtcaodv
 } // namespace ns3

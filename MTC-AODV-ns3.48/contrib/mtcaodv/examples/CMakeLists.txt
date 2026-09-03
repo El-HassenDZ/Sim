@@ -9,3 +9,16 @@ build_lib_example(
     ${libnetwork}
 )
 
+build_lib_example(
+  NAME mtcaodv-gate1b
+  SOURCE_FILES mtcaodv-gate1b.cc
+  LIBRARIES_TO_LINK
+    ${libmtcaodv}
+    ${libaodv}
+    ${libapplications}
+    ${libcore}
+    ${libinternet}
+    ${libmobility}
+    ${libnetwork}
+    ${libwifi}
+)

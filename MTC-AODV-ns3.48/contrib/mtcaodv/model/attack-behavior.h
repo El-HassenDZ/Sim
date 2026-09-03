@@ -46,6 +46,35 @@ struct ForgedReplyProfile
 /**
  * @ingroup mtcaodv
  *
+ * @brief Complete context for one attacker drop decision.
+ *
+ * Every field is supplied by the routing adapter at the point of decision.
+ * `isTransit` is the safety-critical one: it is true only for a packet that
+ * this node is forwarding on behalf of another source-destination pair.
+ */
+struct PacketDropContext
+{
+    /** @brief Simulation time at which the decision is taken. */
+    Time observationTime{Seconds(0)};
+
+    /**
+     * @brief True only when the node is forwarding for another endpoint pair.
+     *
+     * Defaults to false so that a caller which forgets to set it obtains the
+     * benign decision rather than an unintended drop.
+     */
+    bool isTransit{false};
+
+    /** @brief True for AODV routing-control traffic. */
+    bool isRoutingControl{false};
+
+    /** @brief True for MTC-AODV security-control traffic. */
+    bool isSecurityControl{false};
+};
+
+/**
+ * @ingroup mtcaodv
+ *
  * @brief Abstract policy used by a malicious routing node.
  *
  * Separating attack policy from packet processing prevents the experiment
@@ -102,15 +131,20 @@ class AttackBehavior : public Object
         uint32_t observedDestinationSequenceNumber) const = 0;
 
     /**
-     * @brief Decide whether a transit packet must be discarded.
-     * @param now Current simulation time.
-     * @param isRoutingControl true for AODV control traffic.
-     * @param isSecurityControl true for MTC-AODV security-control traffic.
+     * @brief Decide whether a packet must be discarded by an attacker.
+     *
+     * The decision is expressed over a complete context rather than loose
+     * arguments because the transit property is a safety precondition: an
+     * attacker that discards its own locally originated or locally destined
+     * traffic models a broken node, not a Blackhole, and the resulting loss
+     * would be misattributed to the attack.  Making the property a required
+     * field forces every call site to state it, and lets the policy refuse by
+     * default when it is absent.
+     *
+     * @param context Complete decision context for one packet.
      * @return true when the packet is attack data and must be dropped.
      */
-    virtual bool ShouldDropTransitPacket(Time now,
-                                         bool isRoutingControl,
-                                         bool isSecurityControl) const = 0;
+    virtual bool ShouldDropPacket(const PacketDropContext& context) const = 0;
 };
 
 } // namespace mtcaodv

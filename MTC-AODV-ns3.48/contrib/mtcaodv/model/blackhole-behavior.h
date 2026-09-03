@@ -63,10 +63,8 @@ class BlackholeBehavior final : public AttackBehavior
     ForgedReplyProfile CreateForgedReplyProfile(
         uint32_t observedDestinationSequenceNumber) const override;
 
-    /** @copydoc AttackBehavior::ShouldDropTransitPacket() */
-    bool ShouldDropTransitPacket(Time now,
-                                 bool isRoutingControl,
-                                 bool isSecurityControl) const override;
+    /** @copydoc AttackBehavior::ShouldDropPacket() */
+    bool ShouldDropPacket(const PacketDropContext& context) const override;
 
   private:
     /**

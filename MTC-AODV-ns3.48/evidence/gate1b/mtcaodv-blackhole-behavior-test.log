@@ -1,0 +1,38 @@
+NS3_ENABLED_MODULES == ['ns3-buildings', 'ns3-antenna', 'ns3-mobility', 'ns3-propagation', 'ns3-spectrum', 'ns3-energy', 'ns3-wifi', 'ns3-internet-apps', 'ns3-traffic-control', 'ns3-core', 'ns3-stats', 'ns3-network', 'ns3-bridge', 'ns3-internet', 'ns3-applications', 'ns3-point-to-point', 'ns3-aodv']
+NS3_ENABLED_CONTRIBUTED_MODULES == ['ns3-mtcaodv']
+NS3_MODULE_PATH == ['/root/.local/bin', '/root/.cargo/bin', '/usr/local/go/bin', '/opt/node22/bin', '/opt/maven/bin', '/opt/gradle/bin', '/opt/rbenv/bin', '/root/.bun/bin', '/usr/local/sbin', '/usr/local/bin', '/usr/sbin', '/usr/bin', '/sbin', '/bin', '/home/user/ns3build/ns-3.48/build', '/home/user/ns3build/ns-3.48/build/lib']
+ENABLE_EXAMPLES == True
+ENABLE_TESTS == True
+EXAMPLE_DIRECTORIES == ['wireless', 'udp-client-server', 'udp', 'tutorial', 'traffic-control', 'tcp', 'stats', 'socket', 'routing', 'realtime', 'naming', 'matrix-topology', 'ipv6', 'error-model', 'energy', 'channel-models']
+ENABLE_PYTHON_BINDINGS == False
+NSCLICK == False
+ENABLE_BRITE == False
+ENABLE_OPENFLOW == False
+APPNAME == ns
+BUILD_PROFILE == default
+VERSION == 3.48
+PYTHON == ['/usr/local/bin/python3']
+VALGRIND_FOUND == True
+Building: ./ns3
+[0/2] Re-checking globbed directories...
+ninja: no work to do.
+Finished executing the following commands:
+/usr/bin/cmake --build /home/user/ns3build/ns-3.48/cmake-cache -j 3
+os.environ["PYTHONPATH"] == /home/user/ns3build/ns-3.48/build/bindings/python
+os.environ["LD_LIBRARY_PATH"] == :/root/.local/bin:/root/.cargo/bin:/usr/local/go/bin:/opt/node22/bin:/opt/maven/bin:/opt/gradle/bin:/opt/rbenv/bin:/root/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/user/ns3build/ns-3.48/build:/home/user/ns3build/ns-3.48/build/lib
+Synchronously execute "/home/user/ns3build/ns-3.48/build/utils/ns3.48-test-runner-default" --print-test-name-list
+Return code =  0
+stderr =  
+Queue mtcaodv-blackhole-behavior
+Launch utils/ns3.48-test-runner-default --test-name=mtcaodv-blackhole-behavior --stop-on-failure --fullness=QUICK
+Synchronously execute "/home/user/ns3build/ns-3.48/build/utils/ns3.48-test-runner-default" --test-name=mtcaodv-blackhole-behavior --stop-on-failure --fullness=QUICK --xml --tempdir=testpy-output/2026-09-03-20-00-54-CUT --out=testpy-output/2026-09-03-20-00-54-CUT/mtcaodv-blackhole-behavior.xml
+Return code =  0
+stderr =  
+returncode = 0
+---------- begin standard out ----------
+
+---------- begin standard err ----------
+
+---------- end standard err ----------
+[1/1] [32mPASS[0m: TestSuite mtcaodv-blackhole-behavior
+1 of 1 tests passed (1 passed, 0 skipped, 0 failed, 0 crashed, 0 valgrind errors)
