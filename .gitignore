@@ -35,3 +35,11 @@ jspm_packages
 
 # Optional REPL history
 .node_repl_history
+
+# MTC-AODV
+__pycache__/
+*.py[cod]
+*-build.log
+*-test.log
+gate1-validation.json
+mtcaodv-gate1-validation.json
