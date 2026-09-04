@@ -1,0 +1,6 @@
+# Provenance du fork AODV (généré par scripts/fork_aodv.sh — ne pas éditer)
+upstream            = ns-3.48 src/aodv
+upstream_tree_sha256= 6c365f3cd385eafbfbeafdb50e7aa16ca949aca98b6c819363095a7577d72b9b
+forked_at           = 2026-09-04T09:31:56Z
+license             = GPL-2.0-only (Copyright (c) 2009 IITP RAS) — conservée
+transformation      = renommage mécanique uniquement, aucune modification de logique

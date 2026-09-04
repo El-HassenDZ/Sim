@@ -35,3 +35,9 @@ jspm_packages
 
 # Optional REPL history
 .node_repl_history
+
+# --- MTC-AODV ---------------------------------------------------------------
+# L'arbre ns-3.48 n'est pas versionné : scripts/fetch_ns3.sh le reconstruit.
+mtcaodv/results/
+mtcaodv/**/__pycache__/
+mtcaodv/**/*.pyc
