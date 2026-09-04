@@ -41,3 +41,4 @@ jspm_packages
 mtcaodv/results/
 mtcaodv/**/__pycache__/
 mtcaodv/**/*.pyc
+mtcaodv/.pytest_cache/
