@@ -29,6 +29,7 @@ build_lib(
     model/cbr-traffic-applications.cc
     model/metrics-collector.cc
     model/mtc-traffic-header.cc
+    model/topology-probe.cc
   HEADER_FILES
     helper/mtc-aodv-helper.h
     model/mtc-aodv-dpd.h
@@ -46,6 +47,7 @@ build_lib(
     model/cbr-traffic-applications.h
     model/metrics-collector.h
     model/mtc-traffic-header.h
+    model/topology-probe.h
   LIBRARIES_TO_LINK
     ${libapplications}
     ${libinternet-apps}

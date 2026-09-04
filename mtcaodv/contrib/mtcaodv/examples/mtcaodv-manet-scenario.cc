@@ -28,11 +28,15 @@
 #include "ns3/mobility-module.h"
 #include "ns3/mtc-aodv-helper.h"
 #include "ns3/network-module.h"
+#include "ns3/topology-probe.h"
 #include "ns3/wifi-module.h"
 #include "ns3/wifi-radio-energy-model-helper.h"
 
 #include <filesystem>
+#include <algorithm>
+#include <cmath>
 #include <iomanip>
+#include <tuple>
 #include <fstream>
 #include <iostream>
 
@@ -55,6 +59,27 @@ namespace
 void
 InstallMobility(NodeContainer& nodes, const ExperimentConfiguration& config)
 {
+    if (config.mobilityProfile == MobilityProfile::STATIC_GRID)
+    {
+        // Grille régulière immobile. Aucune route ne casse : c'est une fixture causale,
+        // au même titre que le diamant du §16.3, et non un résultat de mobilité.
+        const uint32_t count = nodes.GetN();
+        const uint32_t width = static_cast<uint32_t>(std::ceil(std::sqrt(count)));
+        const double spacing = width > 1 ? config.areaWidth / (width - 1) : 0.0;
+
+        Ptr<ListPositionAllocator> positions = CreateObject<ListPositionAllocator>();
+        for (uint32_t index = 0; index < count; ++index)
+        {
+            positions->Add(Vector((index % width) * spacing, (index / width) * spacing, 0.0));
+        }
+
+        MobilityHelper gridMobility;
+        gridMobility.SetPositionAllocator(positions);
+        gridMobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
+        gridMobility.Install(nodes);
+        return;
+    }
+
     MobilityHelper mobility;
     mobility.SetMobilityModel("ns3::SteadyStateRandomWaypointMobilityModel",
                               "MinX", DoubleValue(0.0),
@@ -82,8 +107,18 @@ InstallWifi(NodeContainer& nodes, const ExperimentConfiguration& config)
 {
     YansWifiChannelHelper channel;
     channel.SetPropagationDelay("ns3::ConstantSpeedPropagationDelayModel");
-    channel.AddPropagationLoss("ns3::LogDistancePropagationLossModel",
-                               "Exponent", DoubleValue(config.pathLossExponent));
+    if (config.propagationModel == PropagationModel::RANGE_DISC)
+    {
+        // Disque dur : réception parfaite en deçà de la portée, nulle au-delà. Aucun
+        // lien marginal, donc aucune rupture ambiguë à interpréter.
+        channel.AddPropagationLoss("ns3::RangePropagationLossModel",
+                                   "MaxRange", DoubleValue(config.radioRange));
+    }
+    else
+    {
+        channel.AddPropagationLoss("ns3::LogDistancePropagationLossModel",
+                                   "Exponent", DoubleValue(config.pathLossExponent));
+    }
 
     YansWifiPhyHelper phy;
     phy.SetChannel(channel.Create());
@@ -122,6 +157,7 @@ InstallInternetStack(NodeContainer& nodes, const ExperimentConfiguration& config
     {
         AodvHelper aodv;
         aodv.Set("EnableHello", BooleanValue(config.enableHello));
+        aodv.Set("HelloInterval", TimeValue(Seconds(config.helloInterval)));
         internet.SetRoutingHelper(aodv);
         internet.Install(nodes);
         aodv.AssignStreams(nodes, config.routingStream);
@@ -130,6 +166,7 @@ InstallInternetStack(NodeContainer& nodes, const ExperimentConfiguration& config
     {
         MtcAodvHelper mtcAodv;
         mtcAodv.Set("EnableHello", BooleanValue(config.enableHello));
+        mtcAodv.Set("HelloInterval", TimeValue(Seconds(config.helloInterval)));
         internet.SetRoutingHelper(mtcAodv);
         internet.Install(nodes);
         mtcAodv.AssignStreams(nodes, config.routingStream);
@@ -137,23 +174,87 @@ InstallInternetStack(NodeContainer& nodes, const ExperimentConfiguration& config
 }
 
 /**
- * \brief Choisit les couples source/puits des flux CBR.
+ * \brief Choisit les couples source/puits des flux CBR, les plus éloignés d'abord.
  *
- * Les endpoints sont pris aux deux extrémités de la liste de nœuds : les sources sont les
- * `flowCount` premiers indices, les puits les `flowCount` derniers. Ce choix est
- * déterministe et identique entre variantes, condition nécessaire de l'appariement. Il
- * n'introduit pas de biais géographique, les positions étant tirées indépendamment de
- * l'indice par le modèle de mobilité stationnaire.
+ * Un choix par indice de nœud donnerait des couples dont les positions sont
+ * arbitraires : mesuré sur ce scénario, la plupart des flux se retrouvent alors à un
+ * seul saut. Or un chemin sans nœud intermédiaire ne peut être ni intercepté par un
+ * Blackhole, ni observé par le mécanisme de forwarding : l'expérience perdrait son objet.
+ *
+ * La sélection retient donc les `flowCount` couples disjoints les plus éloignés à
+ * l'instant initial. Elle est déterministe et ne dépend que des positions, elles-mêmes
+ * issues du flux RNG de mobilité : deux variantes appariées obtiennent exactement les
+ * mêmes couples (invariant 20.4.4).
+ *
+ * \param nodes nœuds du scénario, mobilité déjà installée
+ * \param flowCount nombre de flux souhaité
+ * \return les couples (indice source, indice destination)
+ * \throw std::invalid_argument si le réseau ne compte pas assez de nœuds
  */
 std::vector<std::pair<uint32_t, uint32_t>>
-SelectFlowEndpoints(const ExperimentConfiguration& config)
+SelectFlowEndpoints(const NodeContainer& nodes, uint32_t flowCount)
 {
-    std::vector<std::pair<uint32_t, uint32_t>> endpoints;
-    endpoints.reserve(config.flowCount);
-    for (uint32_t flow = 0; flow < config.flowCount; ++flow)
+    const uint32_t count = nodes.GetN();
+    if (2 * flowCount > count)
     {
-        endpoints.emplace_back(flow, config.nodeCount - 1 - flow);
+        throw std::invalid_argument("pas assez de nœuds pour le nombre de flux demandé");
     }
+
+    std::vector<Vector> positions(count);
+    for (uint32_t i = 0; i < count; ++i)
+    {
+        positions[i] = nodes.Get(i)->GetObject<MobilityModel>()->GetPosition();
+    }
+
+    struct Candidate
+    {
+        double squaredDistance;
+        uint32_t source;
+        uint32_t destination;
+    };
+
+    std::vector<Candidate> candidates;
+    candidates.reserve(static_cast<size_t>(count) * (count - 1) / 2);
+    for (uint32_t i = 0; i < count; ++i)
+    {
+        for (uint32_t j = i + 1; j < count; ++j)
+        {
+            const double dx = positions[i].x - positions[j].x;
+            const double dy = positions[i].y - positions[j].y;
+            candidates.push_back({dx * dx + dy * dy, i, j});
+        }
+    }
+
+    // Tri décroissant par distance. Les indices départagent les égalités, ce qui rend
+    // l'ordre total et donc la sélection reproductible à l'identique.
+    std::sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b) {
+        if (a.squaredDistance != b.squaredDistance)
+        {
+            return a.squaredDistance > b.squaredDistance;
+        }
+        return std::tie(a.source, a.destination) < std::tie(b.source, b.destination);
+    });
+
+    std::vector<std::pair<uint32_t, uint32_t>> endpoints;
+    std::vector<bool> used(count, false);
+    for (const Candidate& candidate : candidates)
+    {
+        if (endpoints.size() == flowCount)
+        {
+            break;
+        }
+        // Un nœud ne porte qu'un seul rôle : sans cette contrainte, un même nœud
+        // pourrait être source de plusieurs flux et concentrer artificiellement la charge.
+        if (used[candidate.source] || used[candidate.destination])
+        {
+            continue;
+        }
+        used[candidate.source] = true;
+        used[candidate.destination] = true;
+        endpoints.emplace_back(candidate.source, candidate.destination);
+    }
+
+    NS_ABORT_MSG_IF(endpoints.size() != flowCount, "sélection des extrémités de flux incomplète");
     return endpoints;
 }
 
@@ -215,11 +316,25 @@ main(int argc, char* argv[])
     ExperimentConfiguration config;
 
     std::string variantLabel = "A";
+    std::string propagationLabel = ToString(config.propagationModel);
+    std::string mobilityLabel = ToString(config.mobilityProfile);
+
     CommandLine commandLine(__FILE__);
     config.RegisterCommandLine(commandLine);
     commandLine.AddValue("protocolVariant", "Variante : A, B, C0, C ou D", variantLabel);
+    commandLine.AddValue("propagationModel", "Propagation : logdistance ou range", propagationLabel);
+    commandLine.AddValue("mobilityProfile", "Mobilité : rwp ou grid", mobilityLabel);
     commandLine.Parse(argc, argv);
+
     config.variant = ParseProtocolVariant(variantLabel);
+    config.propagationModel = ParsePropagationModel(propagationLabel);
+    config.mobilityProfile = ParseMobilityProfile(mobilityLabel);
+
+    // Le diagnostic topologique doit raisonner avec la portée réellement en vigueur.
+    if (config.propagationModel == PropagationModel::RANGE_DISC)
+    {
+        config.connectivityRadius = config.radioRange;
+    }
     config.Validate();
 
     // Coordonnées aléatoires : réinitialisées explicitement pour qu'une exécution répétée
@@ -250,7 +365,8 @@ main(int argc, char* argv[])
     // Le tirage a lieu même à ratio nul : le manifest doit toujours porter la trace de la
     // décision, et l'appariement exige que la consommation de flux RNG soit identique
     // entre variantes.
-    const std::vector<std::pair<uint32_t, uint32_t>> flowEndpoints = SelectFlowEndpoints(config);
+    const std::vector<std::pair<uint32_t, uint32_t>> flowEndpoints =
+        SelectFlowEndpoints(nodes, config.flowCount);
     std::set<uint32_t> excludedIds;
     if (config.excludeTrafficEndpoints)
     {
@@ -319,6 +435,16 @@ main(int argc, char* argv[])
     metrics->ConnectRoutingOverhead(nodes);
     metrics->ConnectEnergySources(energySources);
 
+    // Diagnostic topologique : mesure hors ligne de la connectivité géométrique, pour
+    // distinguer une perte imputable au protocole d'une absence pure et simple de chemin.
+    Ptr<TopologyProbe> topology = CreateObject<TopologyProbe>();
+    topology->Start(nodes,
+                    flowEndpoints,
+                    config.connectivityRadius,
+                    Seconds(1.0),
+                    config.GetEvaluationStart(),
+                    config.GetEvaluationEnd());
+
     Simulator::Stop(config.GetSimulationEnd());
     Simulator::Run();
 
@@ -358,6 +484,19 @@ main(int argc, char* argv[])
             counters.txPackets ? static_cast<double>(counters.rxPackets) / counters.txPackets : NAN;
         std::cout << ' ' << flowId << ':' << counters.rxPackets << '/' << counters.txPackets << '('
                   << std::fixed << std::setprecision(2) << ratio << ')';
+    }
+    std::cout << std::defaultfloat << '\n';
+
+    std::cout << "  topologie : degré moyen=" << std::fixed << std::setprecision(2)
+              << topology->GetMeanDegree()
+              << " graphe connexe=" << topology->GetConnectedGraphFraction() << '\n'
+              << "  connectivité par flux :";
+    const std::vector<FlowConnectivity>& connectivity = topology->GetFlowConnectivity();
+    for (size_t flow = 0; flow < connectivity.size(); ++flow)
+    {
+        std::cout << ' ' << flow << ':' << connectivity[flow].GetConnectedFraction() << '/'
+                  << std::setprecision(1) << connectivity[flow].GetMeanHopCount() << "sauts"
+                  << std::setprecision(2);
     }
     std::cout << std::defaultfloat << '\n';
 

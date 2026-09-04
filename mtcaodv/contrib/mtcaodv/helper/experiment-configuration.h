@@ -42,6 +42,42 @@ ProtocolVariant ParseProtocolVariant(const std::string& label);
 
 /**
  * \ingroup mtcaodv
+ * \brief Modèle de propagation retenu.
+ *
+ * LOG_DISTANCE produit une portée dépendante de la distance, avec des liens marginaux
+ * qui apparaissent et disparaissent : c'est la situation que le mécanisme OCEA doit
+ * savoir distinguer d'une malveillance (§9.2). RANGE_DISC impose un disque dur : aucun
+ * lien marginal, aucune rupture ambiguë. Le second simplifie l'interprétation causale
+ * mais retire au scénario la difficulté même que le framework prétend traiter ; il est
+ * réservé aux fixtures contrôlées.
+ */
+enum class PropagationModel
+{
+    LOG_DISTANCE,
+    RANGE_DISC
+};
+
+/**
+ * \ingroup mtcaodv
+ * \brief Modèle de mobilité retenu.
+ *
+ * STATIC_GRID place les nœuds sur une grille régulière immobile. Aucune route ne casse,
+ * ce qui isole parfaitement l'effet d'une attaque — au prix de l'hypothèse centrale
+ * d'un MANET (§4.1 : « la topologie est dynamique »).
+ */
+enum class MobilityProfile
+{
+    STEADY_STATE_RWP,
+    STATIC_GRID
+};
+
+std::string ToString(PropagationModel model);
+PropagationModel ParsePropagationModel(const std::string& label);
+std::string ToString(MobilityProfile profile);
+MobilityProfile ParseMobilityProfile(const std::string& label);
+
+/**
+ * \ingroup mtcaodv
  * \brief Paramètres exogènes d'une exécution, communs à toutes les variantes appariées.
  *
  * A7.1 exige que mobilité, radio, trafic, attaquants, activation, seed et flux soient
@@ -66,6 +102,8 @@ struct ExperimentConfiguration
     double speedMax{5.0};       //!< m/s
     double pauseTime{2.0};      //!< s
 
+
+
     // --- Radio ----------------------------------------------------------------------
     std::string dataRate{"DsssRate11Mbps"};
     std::string controlRate{"DsssRate1Mbps"};
@@ -83,6 +121,10 @@ struct ExperimentConfiguration
     std::string nonUnicastRate{"DsssRate11Mbps"};
     double txPowerDbm{16.0};
     double pathLossExponent{2.2};
+    PropagationModel propagationModel{PropagationModel::LOG_DISTANCE};
+    /// Portée du disque dur, utilisée seulement par RANGE_DISC.
+    double radioRange{215.0};
+    MobilityProfile mobilityProfile{MobilityProfile::STEADY_STATE_RWP};
 
     /**
      * Messages HELLO d'AODV.
@@ -94,7 +136,17 @@ struct ExperimentConfiguration
      * RERR est émis et la route est redécouverte inutilement. L'effet mesuré est
      * documenté dans docs/PARAMETERS.md.
      */
-    bool enableHello{false};
+    bool enableHello{true};
+
+    /**
+     * Période des messages HELLO d'AODV.
+     *
+     * La valeur ns-3 par défaut est 1 s. Le coût est linéaire en nombre de nœuds et
+     * s'ajoute à l'inondation des RREQ ; à 100 nœuds, les deux ensemble peuvent
+     * entretenir une boucle de congestion (collisions -> ruptures de lien -> nouvelles
+     * inondations). Le paramètre est exposé pour permettre de mesurer cet effet.
+     */
+    double helloInterval{1.0};
 
     // --- Trafic ---------------------------------------------------------------------
     uint32_t flowCount{10};
@@ -112,6 +164,13 @@ struct ExperimentConfiguration
     double attackerRatio{0.0};
     double attackStartTime{50.0};  //!< s
     bool excludeTrafficEndpoints{true};
+
+    /**
+     * Rayon de connectivité utilisé par l'instrument de diagnostic TopologyProbe.
+     * Doit correspondre à la portée mesurée par mtcaodv-range-probe pour la
+     * configuration radio retenue, et n'a aucun effet sur la simulation elle-même.
+     */
+    double connectivityRadius{215.0};
 
     // --- Énergie --------------------------------------------------------------------
     double initialEnergy{1000.0};  //!< J

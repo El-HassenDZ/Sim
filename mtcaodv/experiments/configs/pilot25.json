@@ -1,0 +1,40 @@
+{
+  "_profil": [
+    "Pilote MANET mobile, 25 nœuds, 60 s. Conforme aux hypothèses de la spécification",
+    "(topologie dynamique, liens marginaux) mais de petite taille : la variance entre",
+    "seeds y est forte, ce que l'appariement A7.1 neutralise pour les contrastes.",
+    "PDR de référence mesuré sans attaque : 0,98 / 0,81 / 0,90 sur les seeds 1001-1003."
+  ],
+  "outputDir": "results/pilot25",
+  "run": 1,
+  "variants": ["A", "D"],
+  "attackerRatios": [0.0, 0.05, 0.10, 0.20, 0.30],
+  "seeds": [1001, 1002, 1003, 1004, 1005],
+
+  "nodeCount": 25,
+  "areaWidth": 700.0,
+  "areaHeight": 700.0,
+  "mobilityProfile": "rwp",
+  "speedMin": 1.0,
+  "speedMax": 5.0,
+  "pauseTime": 2.0,
+  "propagationModel": "logdistance",
+  "pathLossExponent": 2.2,
+  "connectivityRadius": 215.0,
+
+  "flowCount": 4,
+  "packetSize": 512,
+  "packetRate": 4.0,
+
+  "enableHello": true,
+  "helloInterval": 1.0,
+
+  "trafficStart": 10.0,
+  "warmupEnd": 15.0,
+  "trafficStop": 60.0,
+  "drainTime": 5.0,
+
+  "attackStartTime": 20.0,
+  "excludeTrafficEndpoints": true,
+  "initialEnergy": 1000.0
+}

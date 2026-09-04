@@ -1,0 +1,41 @@
+{
+  "_profil": [
+    "Fixture causale contrôlée, calquée sur le projet de référence fourni par l'auteur.",
+    "Grille 5x5 immobile, propagation en disque dur : aucune route ne casse et aucun lien",
+    "n'est marginal. Le PDR de référence mesuré sans attaque vaut 1,000, ce qui isole",
+    "parfaitement l'effet du Blackhole.",
+    "LIMITE ASSUMÉE : il n'y a pas de mobilité. La spécification MTC-AODV (§4.1) exige une",
+    "topologie dynamique, et OCEA a précisément pour objet de distinguer une malveillance",
+    "d'une rupture de lien par mobilité. Ce profil ne peut donc PAS servir de scénario",
+    "confirmatoire : il sert à établir la chaîne causale, comme le diamant du §16.3."
+  ],
+  "outputDir": "results/grid25",
+  "run": 1,
+  "variants": ["A", "D"],
+  "attackerRatios": [0.0, 0.05, 0.10, 0.20, 0.30],
+  "seeds": [1001, 1002, 1003, 1004, 1005],
+
+  "nodeCount": 25,
+  "areaWidth": 100.0,
+  "areaHeight": 100.0,
+  "mobilityProfile": "grid",
+  "propagationModel": "range",
+  "radioRange": 36.0,
+  "connectivityRadius": 36.0,
+
+  "flowCount": 4,
+  "packetSize": 512,
+  "packetRate": 4.0,
+
+  "enableHello": true,
+  "helloInterval": 1.0,
+
+  "trafficStart": 2.0,
+  "warmupEnd": 5.0,
+  "trafficStop": 60.0,
+  "drainTime": 5.0,
+
+  "attackStartTime": 20.0,
+  "excludeTrafficEndpoints": true,
+  "initialEnergy": 100.0
+}

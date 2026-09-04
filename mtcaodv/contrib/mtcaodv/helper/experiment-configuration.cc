@@ -63,6 +63,48 @@ ParseProtocolVariant(const std::string& label)
     throw std::invalid_argument("variante inconnue : '" + label + "' (attendu A, B, C0, C ou D)");
 }
 
+std::string
+ToString(PropagationModel model)
+{
+    return model == PropagationModel::RANGE_DISC ? "range" : "logdistance";
+}
+
+PropagationModel
+ParsePropagationModel(const std::string& label)
+{
+    if (label == "logdistance")
+    {
+        return PropagationModel::LOG_DISTANCE;
+    }
+    if (label == "range")
+    {
+        return PropagationModel::RANGE_DISC;
+    }
+    throw std::invalid_argument("modèle de propagation inconnu : '" + label +
+                                "' (attendu logdistance ou range)");
+}
+
+std::string
+ToString(MobilityProfile profile)
+{
+    return profile == MobilityProfile::STATIC_GRID ? "grid" : "rwp";
+}
+
+MobilityProfile
+ParseMobilityProfile(const std::string& label)
+{
+    if (label == "rwp")
+    {
+        return MobilityProfile::STEADY_STATE_RWP;
+    }
+    if (label == "grid")
+    {
+        return MobilityProfile::STATIC_GRID;
+    }
+    throw std::invalid_argument("profil de mobilité inconnu : '" + label +
+                                "' (attendu rwp ou grid)");
+}
+
 Time
 ExperimentConfiguration::GetSimulationEnd() const
 {
@@ -107,8 +149,10 @@ ExperimentConfiguration::RegisterCommandLine(CommandLine& commandLine)
     commandLine.AddValue("nonUnicastRate", "Débit des trames de diffusion", nonUnicastRate);
     commandLine.AddValue("txPowerDbm", "Puissance d'émission (dBm)", txPowerDbm);
     commandLine.AddValue("pathLossExponent", "Exposant de perte de parcours", pathLossExponent);
+    commandLine.AddValue("radioRange", "Portée du disque dur (modèle range), en m", radioRange);
 
     commandLine.AddValue("enableHello", "Activer les messages HELLO d'AODV", enableHello);
+    commandLine.AddValue("helloInterval", "Période des HELLO AODV (s)", helloInterval);
     commandLine.AddValue("flowCount", "Nombre de flux CBR", flowCount);
     commandLine.AddValue("packetSize", "Charge utile applicative (octets)", packetSize);
     commandLine.AddValue("packetRate", "Débit par flux (paquets/s)", packetRate);
@@ -124,6 +168,9 @@ ExperimentConfiguration::RegisterCommandLine(CommandLine& commandLine)
                          "Exclure les endpoints du tirage d'attaquants",
                          excludeTrafficEndpoints);
 
+    commandLine.AddValue("connectivityRadius",
+                         "Rayon de connectivité du diagnostic topologique (m)",
+                         connectivityRadius);
     commandLine.AddValue("initialEnergy", "Énergie initiale par nœud (J)", initialEnergy);
 
     // La variante est relue après le parsing par le programme appelant, via
@@ -142,7 +189,15 @@ ExperimentConfiguration::Validate() const
 
     require(nodeCount >= 2, "nodeCount doit valoir au moins 2");
     require(areaWidth > 0.0 && areaHeight > 0.0, "dimensions de zone non positives");
-    require(speedMin > 0.0, "speedMin doit être strictement positif (RWP en régime stationnaire)");
+    if (mobilityProfile == MobilityProfile::STEADY_STATE_RWP)
+    {
+        require(speedMin > 0.0,
+                "speedMin doit être strictement positif (RWP en régime stationnaire)");
+    }
+    if (propagationModel == PropagationModel::RANGE_DISC)
+    {
+        require(radioRange > 0.0, "radioRange doit être strictement positif");
+    }
     require(speedMax >= speedMin, "speedMax inférieur à speedMin");
     require(pauseTime >= 0.0, "pauseTime négatif");
 
@@ -195,10 +250,14 @@ ExperimentConfiguration::Describe() const
         {"pauseTime", asString(pauseTime)},
         {"dataRate", dataRate},
         {"enableHello", enableHello ? "1" : "0"},
+        {"helloInterval", asString(helloInterval)},
         {"controlRate", controlRate},
         {"nonUnicastRate", nonUnicastRate},
         {"txPowerDbm", asString(txPowerDbm)},
         {"pathLossExponent", asString(pathLossExponent)},
+        {"propagationModel", ToString(propagationModel)},
+        {"radioRange", asString(radioRange)},
+        {"mobilityProfile", ToString(mobilityProfile)},
         {"flowCount", asString(flowCount)},
         {"packetSize", asString(packetSize)},
         {"packetRate", asString(packetRate)},
