@@ -23,8 +23,12 @@ build_lib(
     model/mtc-aodv-rtable.cc
     # --- composants MTC-AODV originaux --------------------------------------
     helper/attack-manager.cc
+    helper/experiment-configuration.cc
     model/attack-behavior.cc
     model/blackhole-behavior.cc
+    model/cbr-traffic-applications.cc
+    model/metrics-collector.cc
+    model/mtc-traffic-header.cc
   HEADER_FILES
     helper/mtc-aodv-helper.h
     model/mtc-aodv-dpd.h
@@ -36,8 +40,12 @@ build_lib(
     model/mtc-aodv-rtable.h
     # --- composants MTC-AODV originaux --------------------------------------
     helper/attack-manager.h
+    helper/experiment-configuration.h
     model/attack-behavior.h
     model/blackhole-behavior.h
+    model/cbr-traffic-applications.h
+    model/metrics-collector.h
+    model/mtc-traffic-header.h
   LIBRARIES_TO_LINK
     ${libapplications}
     ${libinternet-apps}

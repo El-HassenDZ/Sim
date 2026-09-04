@@ -24,7 +24,7 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 log() { printf '[fetch_ns3] %s\n' "$*"; }
 
 if [[ -x "${NS3_DIR}/ns3" ]]; then
-    log "arbre ns-3.${NS3_VERSION} déjà présent dans ${NS3_DIR}"
+    log "arbre ${NS3_TAG} déjà présent dans ${NS3_DIR}"
 else
     mkdir -p "${NS3_PARENT}"
     local_archive="${NS3_PARENT}/${NS3_TAG}.tar.gz"
@@ -54,6 +54,21 @@ if [[ -L "${link_target}" || -e "${link_target}" ]]; then
 fi
 ln -s "${PROJECT_ROOT}/contrib/mtcaodv" "${link_target}"
 log "contrib/mtcaodv -> ${PROJECT_ROOT}/contrib/mtcaodv"
+
+# Les programmes de scénario vivent dans contrib/mtcaodv/examples/, comme l'impose la
+# structure normative (§2.2). Ils sont exposés à ns-3 via scratch/ plutôt que par
+# --enable-examples : cette option compilerait aussi la centaine d'exemples des modules
+# wifi, internet et consorts, pour aucun bénéfice ici. Chaque fichier est lié
+# individuellement car ns-3 refuse plusieurs fonctions main dans un même sous-répertoire
+# de scratch.
+shopt -s nullglob
+for example in "${PROJECT_ROOT}"/contrib/mtcaodv/examples/*.cc; do
+    scratch_link="${NS3_DIR}/scratch/$(basename "${example}")"
+    rm -f "${scratch_link}"
+    ln -s "${example}" "${scratch_link}"
+    log "scratch/$(basename "${example}") -> ${example}"
+done
+shopt -u nullglob
 
 # Vérification de version : le fichier VERSION de ns-3-dev doit annoncer le tag.
 if [[ -f "${NS3_DIR}/VERSION" ]]; then

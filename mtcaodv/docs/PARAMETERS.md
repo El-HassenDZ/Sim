@@ -147,6 +147,60 @@ mais indirectes, d'où des poids moindres.
 
 ---
 
+## Calibration radio mesurée — C-28
+
+Ces valeurs ne sont pas issues de la littérature mais d'une mesure faite dans cet arbre
+ns-3.48, avec `contrib/mtcaodv/examples/mtcaodv-range-probe.cc`. La sonde envoie 100
+paquets de 512 octets entre deux nœuds fixes, sans routage, et relève le taux de
+livraison à distance croissante pour les quatre débits 802.11b.
+
+**Portée utile mesurée** (Tx = 16 dBm, `LogDistancePropagationLossModel`) :
+
+| Exposant de perte | Portée utile | Commentaire |
+|---:|---:|---|
+| 3,0 | **≈ 50 m** | valeur initialement retenue ; inutilisable, voir ci-dessous |
+| 2,5 | ≈ 110 m | |
+| 2,2 | **≈ 215 m** | valeur retenue |
+| 2,0 | ≈ 370 m | |
+
+Deux constats déterminants pour le dimensionnement :
+
+1. **La coupure est identique pour les quatre débits** (1 ; 2 ; 5,5 ; 11 Mbit/s) et se
+   situe à une puissance reçue d'environ −82 dBm. Ce n'est donc pas la démodulation qui
+   limite la portée, mais l'attribut `CcaSensitivity` de `WifiPhy`, dont la valeur par
+   défaut est exactement **−82 dBm**. Conséquence pratique : il n'y a pas, dans cette
+   configuration, d'asymétrie entre la portée du contrôle à 1 Mbit/s et celle des
+   données à 11 Mbit/s. Cette asymétrie, fréquente dans d'autres configurations ns-3,
+   produirait des routes établies sur des liens incapables de porter les données.
+2. **Avec l'exposant 3,0, la portée tombe à 50 m.** Pour 50 nœuds sur 800 × 800 m, le
+   degré moyen vaut alors \(50\pi\cdot50^2/800^2 \approx 0{,}6\) : le réseau est
+   quasi totalement déconnecté et le PDR mesuré était de 12,6 %. Ce n'était pas un
+   résultat sur AODV mais un défaut de dimensionnement.
+
+**Exposant retenu : 2,2**, qui donne une portée d'environ 215 m — la valeur classique
+d'un 802.11b en extérieur — et permet une densité exploitable :
+\(\text{degré} \approx N\pi r^2/A\), soit ≈ 10 pour 100 nœuds sur 1200 × 1200 m.
+
+## Messages HELLO d'AODV — mesuré
+
+`ns3::aodv::RoutingProtocol::EnableHello` vaut `true` par défaut. AODV dispose aussi
+d'un retour d'erreur MAC 802.11 (`NotifyTxError`), ce qui laisse penser que les HELLO
+sont redondants. La mesure contredit cette intuition :
+
+| Configuration (N=50, 800 × 800 m, 5 flux, seed 1001) | PDR | Découvertes | PDR du flux 0 |
+|---|---:|---:|---:|
+| HELLO activés | **0,945** | 435 | 0,80 |
+| HELLO désactivés | 0,790 | 21 | **0,26** |
+
+Sans HELLO, le nombre de découvertes s'effondre — mais parce qu'AODV ne détecte plus la
+rupture : il continue d'émettre vers une route morte. La perte n'est pas diffuse, elle
+est concentrée sur un flux dont la route ne se rétablit jamais. Le retour d'erreur MAC
+seul ne suffit donc pas dans cette configuration.
+
+**Décision : HELLO activés.** Le surcoût de contrôle est réel et mesuré (NRO ≈ 10), mais
+il achète la détection de rupture. Le paramètre reste identique entre toutes les
+variantes appariées, donc il n'avantage aucune d'elles.
+
 ## Scénario — C-25, C-27, C-28
 
 Toutes les valeurs de la section `scenario` sauf `nodeCount = 100` sont **PROVISOIRES**
