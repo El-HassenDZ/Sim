@@ -64,6 +64,68 @@ Trois enseignements, tous contre-intuitifs et tous reproduits :
    à 13,9 Go. Ce n'est pas une limite de la machine mais un symptôme de l'effondrement
    de congestion décrit au point 2.
 
+## Étape 0 — baseline du pilote `mtc-aodv-pilot`
+
+Toutes les lignes de cette section proviennent d'exécutions réelles sur ns-3.48, profil
+`default` (NS3_ASSERT=ON), dans l'environnement de développement. Aucune n'a valeur
+confirmatoire : 10 seeds ne constituent pas une estimation appariée au sens d'A7.
+
+**Configuration de référence.** N = 20 ; 600 × 600 m ; Random Waypoint 1–20 m/s, pause
+2 s ; IEEE 802.11b, `ns3::AdhocWifiMac`, `DsssRate11Mbps` (données et diffusions),
+`DsssRate1Mbps` (contrôle 802.11), 16 dBm ; log-distance d'exposant 2,2 ; IPv4
+10.1.0.0/24 ; HELLO 1 s ; 4 flux CBR UDP de 512 octets à 4 paquets/s ; simTime 60 s,
+warm-up 10 s, vidange 5 s, donc \(T_{eval} = 45\) s ; seeds 1001–1010, run 1.
+
+| Métrique | moyenne | écart-type | médiane | Q1 | Q3 | min | max |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| PDR | 0,8168 | 0,1093 | 0,8826 | 0,7656 | 0,8858 | 0,6306 | 0,9194 |
+| délai moyen (s) | 0,0300 | 0,0113 | 0,0323 | 0,0229 | 0,0385 | 0,0116 | 0,0458 |
+| NRO | 3,148 | 0,528 | 3,056 | 2,795 | 3,400 | 2,417 | 4,134 |
+| degré moyen | 7,93 | 1,28 | 7,52 | 7,38 | 8,08 | 6,32 | 10,83 |
+| graphe connexe | 0,861 | 0,119 | 0,913 | 0,745 | 0,935 | 0,696 | 1,000 |
+
+**Diagnostic à facteur unique** (mêmes 10 seeds, un seul paramètre modifié) :
+
+| Configuration | PDR moyen | degré | graphe connexe | sauts moyens |
+|---|---:|---:|---:|---:|
+| 600 × 600 m (référence) | 0,817 | 7,93 | 0,861 | 2,18 |
+| 450 × 450 m | 0,881 | 11,73 | 1,000 | 1,58 |
+| 400 × 400 m | 0,924 | 13,63 | 1,000 | 1,40 |
+| vitesse 1–5 m/s | 0,808 | 7,63 | 0,776 | 3,07 |
+| HELLO désactivés | 0,735 | 7,93 | 0,861 | — |
+| HELLO à 3 s | 0,803 | 7,93 | 0,861 | — |
+
+**Interprétation mesurée, non supposée.** La perte résiduelle est majoritairement
+géométrique : à 400 × 400 m le graphe est connexe en permanence et le PDR atteint 0,924.
+Mais le nombre de sauts moyen y tombe à 1,40, c'est-à-dire que la plupart des flux
+n'ont plus de nœud intermédiaire — or un Blackhole n'intercepte que du trafic en transit,
+et l'observation du forwarding (étape 3) exige un relais observable. Resserrer la zone
+améliorerait donc le PDR en supprimant le phénomène à étudier. La référence reste
+600 × 600 m. Réduire la mobilité n'aide pas non plus : à 1–5 m/s la connectivité se
+dégrade (0,776), le RWP lent ne résorbant pas les partitions initiales.
+
+**Conséquence à trancher.** À 20 nœuds, connectivité et profondeur multi-saut s'opposent :
+un PDR sain proche de 100 % et des chemins de 2–3 sauts ne sont pas simultanément
+atteignables. L'objectif « PDR > 90 % sous attaque » doit être lu relativement à une
+baseline saine de 0,82, ou la population doit être augmentée (le §16.1 fixe N = 100 pour
+l'étude confirmatoire).
+
+| Contrôle de l'étape 0 | Statut | Détail |
+|---|---|---|
+| Compilation du pilote et du module sur ns-3.48 | **MESURÉ** | profil `default`, exit 0 |
+| Suite `mtcaodv-metrics` (M-01 à M-13) | **MESURÉ** | 1/1 suite PASS |
+| Suite `mtcaodv-attack` (non-régression) | **MESURÉ** | 1/1 suite PASS |
+| Reproductibilité T-32 | **MESURÉ** | même seed exécuté deux fois : CSV et manifest identiques bit à bit |
+| Fork `mtcaodv` ≡ AODV standard | **MESURÉ** | 10 seeds appariés, 0 divergence sur les 9 colonnes de mesure |
+| Appariement (empreinte de scénario) | **MESURÉ** | identique entre protocoles, différente dès qu'un paramètre exogène change |
+| Rejet fail-closed d'une configuration impossible | **MESURÉ** | `--nodes=255`, warm-up couvrant la simulation, ratio hors [0,1] |
+| Rejet d'un ratio d'attaquants non nul à l'étape 0 | **MESURÉ** | code de retour 1 |
+| Rejet de données falsifiées par `validate_step0.py` | **MESURÉ** | PDR modifié sans ses compteurs : rejeté |
+| Attaque A2.3/A2.4 dans le protocole | **NON MESURÉ** | étape 1 |
+| Détection RREP, OCEA, MOBeta, certificats, PTMB | **NON MESURÉ** | étapes 2 à 10 |
+
+---
+
 ## Limite d'exécution de l'environnement de développement
 
 La campagne confirmatoire A7 exige au minimum 5 variantes × 4 ratios × 30 seeds = **600

@@ -23,7 +23,28 @@ done
 echo
 echo "=== tests Python ==="
 cd "${PROJECT_ROOT}"
-python3 -m pytest experiments/tests/ -q
+# pytest est préférable (sortie plus lisible, collecte des tests écrits en style pytest),
+# mais les tests de l'étape 0 sont écrits en unittest afin de rester exécutables sans
+# aucune dépendance externe. On bascule donc automatiquement si pytest est absent.
+if python3 -c "import pytest" 2>/dev/null; then
+    python3 -m pytest experiments/tests/ -q
+else
+    echo "[run_tests] pytest absent — installez-le (pip install pytest) pour la suite"
+    echo "[run_tests] complète. Repli : seuls les modules écrits en unittest sont exécutés."
+    unittest_modules=()
+    for module in experiments/tests/test_*.py; do
+        # Un module qui importe pytest ne peut pas être chargé par unittest : l'exclure
+        # explicitement vaut mieux qu'un ImportError qui masquerait les modules valides.
+        if ! grep -q '^import pytest' "${module}"; then
+            unittest_modules+=("$(basename "${module}" .py)")
+        else
+            echo "[run_tests] ignoré (nécessite pytest) : ${module}"
+        fi
+    done
+    if [[ ${#unittest_modules[@]} -gt 0 ]]; then
+        (cd experiments/tests && python3 -m unittest "${unittest_modules[@]}" -v)
+    fi
+fi
 
 echo
 echo "=== validation de la configuration ==="

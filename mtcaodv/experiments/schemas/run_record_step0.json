@@ -1,0 +1,220 @@
+{
+  "_comment": [
+    "Schéma normatif de la ligne de résultats produite par mtc-aodv-pilot à l'étape 0.",
+    "Il est la référence de validate_step0.py et doit rester synchronisé avec",
+    "RunRecord::GetMandatoryColumns() dans contrib/mtcaodv/model/run-record.cc.",
+    "Règle d'extension : une étape ultérieure AJOUTE des entrées à 'optionalColumns'",
+    "ou une nouvelle liste, mais ne modifie ni ne réordonne 'mandatoryColumns'."
+  ],
+  "schemaVersion": "step0.1",
+  "step": 0,
+  "mandatoryColumns": [
+    {
+      "name": "protocol",
+      "type": "string",
+      "allowed": ["aodv", "mtcaodv"],
+      "nanAllowed": false,
+      "description": "Protocole de routage installé. 'aodv' = module standard src/aodv non modifié."
+    },
+    {
+      "name": "nodes",
+      "type": "integer",
+      "min": 2,
+      "max": 254,
+      "nanAllowed": false,
+      "description": "Population N. Plafond imposé par l'adressage normatif 10.1.0.0/24."
+    },
+    {
+      "name": "simTime",
+      "type": "number",
+      "exclusiveMin": 0,
+      "nanAllowed": false,
+      "unit": "s",
+      "description": "Durée totale simulée."
+    },
+    {
+      "name": "minSpeed",
+      "type": "number",
+      "exclusiveMin": 0,
+      "nanAllowed": false,
+      "unit": "m/s",
+      "description": "Vitesse minimale du modèle de mobilité."
+    },
+    {
+      "name": "maxSpeed",
+      "type": "number",
+      "exclusiveMin": 0,
+      "nanAllowed": false,
+      "unit": "m/s",
+      "description": "Vitesse maximale du modèle de mobilité."
+    },
+    {
+      "name": "seed",
+      "type": "integer",
+      "min": 1,
+      "nanAllowed": false,
+      "description": "Seed RNG ns-3."
+    },
+    {
+      "name": "run",
+      "type": "integer",
+      "min": 0,
+      "nanAllowed": false,
+      "description": "Numéro de run RNG ns-3."
+    },
+    {
+      "name": "attackerRatio",
+      "type": "number",
+      "min": 0.0,
+      "max": 1.0,
+      "nanAllowed": false,
+      "description": "r_a demandé. Décision D-01 : hors de [0,1] ou non fini => configuration rejetée."
+    },
+    {
+      "name": "attackerCount",
+      "type": "integer",
+      "min": 0,
+      "nanAllowed": false,
+      "description": "N_A effectivement tiré, Éq. (2) : floor(r_a * N + 0.5)."
+    },
+    {
+      "name": "attackStart",
+      "type": "number",
+      "min": 0.0,
+      "nanAllowed": false,
+      "unit": "s",
+      "description": "t_attack. Exposé dès l'étape 0 ; l'attaque n'est câblée qu'à l'étape 1."
+    },
+    {
+      "name": "appTxPackets",
+      "type": "integer",
+      "min": 0,
+      "nanAllowed": false,
+      "description": "N_app^tx observé à la source, jamais déduit de la charge configurée."
+    },
+    {
+      "name": "appRxPackets",
+      "type": "integer",
+      "min": 0,
+      "nanAllowed": false,
+      "description": "N_app^rx observé au puits."
+    },
+    {
+      "name": "appTxBytes",
+      "type": "integer",
+      "min": 0,
+      "nanAllowed": false,
+      "unit": "octets",
+      "description": "Octets de charge utile applicative émis, en-tête de mesure compris."
+    },
+    {
+      "name": "appRxBytes",
+      "type": "integer",
+      "min": 0,
+      "nanAllowed": false,
+      "unit": "octets",
+      "description": "B_app,payload^rx : octets de charge utile applicative livrés."
+    },
+    {
+      "name": "pdr",
+      "type": "metric",
+      "min": 0.0,
+      "max": 1.0,
+      "nanAllowed": true,
+      "equation": "20",
+      "description": "N_app^rx / N_app^tx. NaN si aucun paquet n'a été émis (§21)."
+    },
+    {
+      "name": "plr",
+      "type": "metric",
+      "min": 0.0,
+      "max": 1.0,
+      "nanAllowed": true,
+      "equation": "24",
+      "description": "1 - PDR. Défini si et seulement si PDR l'est."
+    },
+    {
+      "name": "throughput_bps",
+      "type": "metric",
+      "min": 0.0,
+      "nanAllowed": true,
+      "unit": "bit/s",
+      "equation": "25",
+      "description": "8 * B_network^rx / T_eval."
+    },
+    {
+      "name": "goodput_bps",
+      "type": "metric",
+      "min": 0.0,
+      "nanAllowed": true,
+      "unit": "bit/s",
+      "equation": "25",
+      "description": "8 * B_app,payload^rx / T_eval."
+    },
+    {
+      "name": "meanDelay_s",
+      "type": "metric",
+      "min": 0.0,
+      "nanAllowed": true,
+      "unit": "s",
+      "equation": "26",
+      "description": "Moyenne des délais des paquets livrés. NaN si aucun paquet n'est livré."
+    }
+  ],
+  "crossFieldChecks": [
+    {
+      "id": "X-01",
+      "description": "appRxPackets <= appTxPackets : on ne livre pas plus qu'on n'émet."
+    },
+    {
+      "id": "X-02",
+      "description": "pdr = appRxPackets / appTxPackets à la tolérance numérique près."
+    },
+    {
+      "id": "X-03",
+      "description": "pdr + plr = 1 (Éq. 24), ou les deux sont NaN ensemble."
+    },
+    {
+      "id": "X-04",
+      "description": "attackerCount = floor(attackerRatio * nodes + 0.5) (Éq. 2)."
+    },
+    {
+      "id": "X-05",
+      "description": "maxSpeed >= minSpeed."
+    },
+    {
+      "id": "X-06",
+      "description": "appRxBytes <= appTxBytes."
+    },
+    {
+      "id": "X-07",
+      "description": "goodput_bps <= throughput_bps : la charge utile est incluse dans les octets réseau."
+    },
+    {
+      "id": "X-08",
+      "description": "Un appTxPackets nul rend l'exécution invalide pour le PDR (§21) : le run est rejeté."
+    }
+  ],
+  "manifestChecks": [
+    {
+      "id": "MF-01",
+      "description": "ns3Version = '3.48'."
+    },
+    {
+      "id": "MF-02",
+      "description": "ipv4Network = '10.1.0.0' et ipv4Mask = '255.255.255.0'."
+    },
+    {
+      "id": "MF-03",
+      "description": "Les identifiants d'attaquants sont uniques et triés (invariant 20.4.3, A2.2)."
+    },
+    {
+      "id": "MF-04",
+      "description": "attackerCount du manifest = attackerCount du CSV."
+    },
+    {
+      "id": "MF-05",
+      "description": "Les paramètres du manifest reproduisent les colonnes de condition du CSV."
+    }
+  ]
+}

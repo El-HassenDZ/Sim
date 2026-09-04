@@ -237,3 +237,88 @@ aurait pu induire en erreur sur l'hypothèse conditionnelle du §4.4.
 ## Divergences à venir
 
 Toute étape ultérieure ajoute ses divergences ici avant d'être déclarée validée.
+
+---
+
+## D-I8 — Le schéma CSV normatif renomme des colonnes de l'étape précédente
+
+**Prévu.** La spécification ne fixe pas de noms de colonnes CSV ; le plan de
+développement de l'étape 0 en impose dix-neuf, dans un ordre précis :
+`protocol, nodes, simTime, minSpeed, maxSpeed, seed, run, attackerRatio, attackerCount,
+attackStart, appTxPackets, appRxPackets, appTxBytes, appRxBytes, pdr, plr,
+throughput_bps, goodput_bps, meanDelay_s`.
+
+**Implémenté.** `RunRecord` produit exactement ce schéma. Le programme hérité
+`mtcaodv-manet-scenario` conserve son ancien schéma
+(`appTxPayloadBytes`, `throughputBps`, `meanDelaySeconds`, colonnes de contexte triées
+alphabétiquement par `std::map`), inchangé.
+
+**Pourquoi.** Le nouveau schéma est normatif pour la séquence d'étapes en cours ;
+l'ancien appartient à des mesures déjà produites. Les renommer aurait invalidé les
+fichiers existants sans bénéfice. Les deux programmes écrivent donc des schémas
+différents, ce qui est assumé et documenté plutôt que masqué.
+
+**Impact.** Aucun sur les grandeurs mesurées : ce sont les mêmes équations, calculées par
+le même code depuis cette étape. Les résultats issus des deux programmes ne doivent pas
+être concaténés sans renommage explicite des colonnes.
+
+---
+
+## D-I9 — Convention JSON pour une grandeur non applicable : `null`
+
+**Prévu.** L'invariant 20.4.6 et la décision D-22 imposent `NaN` ou `N/A` pour toute
+grandeur non applicable, jamais un zéro fabriqué.
+
+**Implémenté.** `NaN` dans les CSV ; **`null`** dans les manifests JSON.
+
+**Pourquoi.** JSON ne possède pas de littéral pour « non un nombre ». La première version
+du manifest écrivait la valeur brute, donc `nan` — un fichier que tout analyseur JSON
+conforme rejette. Le défaut a été trouvé par `validate_step0.py` sur le balayage à faible
+mobilité (seed 1004), où un flux dont les extrémités n'ont jamais été connectées n'a pas
+de nombre de sauts moyen. Une grandeur légitimement absente invalidait alors l'exécution
+entière. Correction dans `FormatJsonNumber()`, régression couverte par le test M-13.
+
+**Impact.** Aucun sur la sémantique : `null` et `NaN` disent la même chose, et aucun des
+deux n'est zéro. Les lecteurs de manifest doivent traiter `null` comme non applicable.
+
+---
+
+## D-I10 — Random Waypoint classique par défaut, régime stationnaire en option
+
+**Prévu.** Le §16.1 propose « Random Waypoint en état stationnaire » comme mobilité
+principale, au statut **Proposé** (non figé). Le plan de développement de l'étape 0
+prescrit « RandomWaypoint », vitesses 1 à 20 m/s.
+
+**Implémenté.** `ns3::RandomWaypointMobilityModel` par défaut ;
+`ns3::SteadyStateRandomWaypointMobilityModel` disponible via `--mobility=ssrwp`.
+
+**Pourquoi.** Le plan de développement nomme le modèle classique, et le statut du §16.1
+est « Proposé », donc non contraignant. Le transitoire de densité et de vitesse propre au
+RWP classique (réf. 22, Yoon et al.) est traité par le warm-up de 10 s, exclu de la
+fenêtre d'évaluation. Conserver les deux modèles permet en outre de mesurer l'effet de ce
+choix au lieu de le postuler.
+
+**Impact.** Le choix du modèle de mobilité modifie l'empreinte de scénario, donc les
+exécutions appariées doivent toutes utiliser le même. À trancher avant le gel des
+paramètres (étape 12).
+
+---
+
+## D-I11 — Deux classes de configuration coexistent
+
+**Prévu.** Une configuration unique par exécution.
+
+**Implémenté.** `ExperimentConfiguration` (plan confirmatoire du §16.1, N = 100, 600 s,
+variantes A/B/C0/C/D ; options `--nodeCount`, `--speedMin`, `--speedMax`,
+`--attackStartTime`) et `PilotConfiguration` (pilote normatif, N = 20, 60 s ; options
+`--nodes`, `--simTime`, `--minSpeed`, `--maxSpeed`, `--attackStart`).
+
+**Pourquoi.** Le plan de développement impose des noms d'options que la classe héritée
+n'utilise pas. Les renommer aurait invalidé les commandes et les mesures déjà produites
+avec `mtcaodv-manet-scenario`. La duplication est bornée — environ 200 lignes — et
+explicite.
+
+**Impact.** Risque de dérive entre les deux si une étape ultérieure n'en met à jour
+qu'une. Atténuation : **toutes les nouvelles étapes utilisent `PilotConfiguration` et
+`mtc-aodv-pilot`** ; le couple hérité n'est plus étendu. Convergence à programmer à
+l'étape 12, lorsque les paramètres physiques seront gelés.

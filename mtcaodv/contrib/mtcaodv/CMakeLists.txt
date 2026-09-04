@@ -24,11 +24,14 @@ build_lib(
     # --- composants MTC-AODV originaux --------------------------------------
     helper/attack-manager.cc
     helper/experiment-configuration.cc
+    helper/pilot-configuration.cc
     model/attack-behavior.cc
     model/blackhole-behavior.cc
     model/cbr-traffic-applications.cc
     model/metrics-collector.cc
     model/mtc-traffic-header.cc
+    model/network-metrics.cc
+    model/run-record.cc
     model/topology-probe.cc
   HEADER_FILES
     helper/mtc-aodv-helper.h
@@ -42,11 +45,14 @@ build_lib(
     # --- composants MTC-AODV originaux --------------------------------------
     helper/attack-manager.h
     helper/experiment-configuration.h
+    helper/pilot-configuration.h
     model/attack-behavior.h
     model/blackhole-behavior.h
     model/cbr-traffic-applications.h
     model/metrics-collector.h
     model/mtc-traffic-header.h
+    model/network-metrics.h
+    model/run-record.h
     model/topology-probe.h
   LIBRARIES_TO_LINK
     ${libapplications}
@@ -57,4 +63,5 @@ build_lib(
     ${libflow-monitor}
   TEST_SOURCES
     test/mtcaodv-attack-test-suite.cc
+    test/mtcaodv-metrics-test-suite.cc
 )

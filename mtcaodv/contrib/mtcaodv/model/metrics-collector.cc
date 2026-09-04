@@ -43,20 +43,6 @@ constexpr uint8_t AODV_MESSAGE_TYPE_RREQ = 1;
 constexpr uint32_t IPV4_HEADER_BYTES = 20;
 constexpr uint32_t UDP_HEADER_BYTES = 8;
 
-/// Écrit une métrique, ou « NaN » si elle n'est pas applicable (D-22, invariant 20.4.6).
-std::string
-FormatMetric(const MetricValue& value)
-{
-    if (!value.has_value() || !std::isfinite(*value))
-    {
-        return "NaN";
-    }
-    std::ostringstream stream;
-    stream.precision(9);
-    stream << std::defaultfloat << *value;
-    return stream.str();
-}
-
 } // namespace
 
 NS_OBJECT_ENSURE_REGISTERED(MetricsCollector);
@@ -278,56 +264,31 @@ MetricsCollector::ComputeReport() const
     const double windowSeconds = (m_windowEnd - m_windowStart).GetSeconds();
     report.evaluationWindowSeconds = windowSeconds;
 
-    // Éq. (20) et (24). Sans paquet émis, l'exécution est invalide pour le PDR (§21) :
-    // on ne fabrique pas un ratio.
-    if (m_applicationTxPackets > 0)
-    {
-        const double pdr =
-            static_cast<double>(m_applicationRxPackets) / static_cast<double>(m_applicationTxPackets);
-        report.packetDeliveryRatio = pdr;
-        report.packetLossRatio = 1.0 - pdr;
-    }
+    // Les équations (20), (24), (25), (26), (27) et (28) sont implémentées une seule
+    // fois, dans network-metrics.cc, et vérifiées au niveau 1 par la suite de tests
+    // « mtcaodv-metrics ». Le collecteur se borne ici à fournir les compteurs observés
+    // et la fenêtre d'évaluation.
+    ObservedCounters counters;
+    counters.applicationTxPackets = m_applicationTxPackets;
+    counters.applicationRxPackets = m_applicationRxPackets;
+    counters.applicationTxPayloadBytes = m_applicationTxPayloadBytes;
+    counters.applicationRxPayloadBytes = m_applicationRxPayloadBytes;
+    counters.deliveredNetworkBytes = report.deliveredNetworkBytes;
+    counters.aodvControlTransmissions = m_aodvControlTransmissions;
+    counters.routeDiscoveries = m_routeDiscoveries;
 
-    // Éq. (25). La fenêtre est strictement positive par construction de
-    // SetEvaluationWindow, mais on reste défensif.
-    if (windowSeconds > 0.0)
-    {
-        report.throughputBitsPerSecond = 8.0 * static_cast<double>(report.deliveredNetworkBytes) / windowSeconds;
-        report.goodputBitsPerSecond = 8.0 * static_cast<double>(m_applicationRxPayloadBytes) / windowSeconds;
-        report.routeDiscoveryFrequency = static_cast<double>(m_routeDiscoveries) / windowSeconds;
-    }
+    const DerivedNetworkMetrics derived =
+        ComputeDerivedNetworkMetrics(counters, m_delaysSeconds, windowSeconds);
 
-    // Éq. (26) et quantiles.
-    if (!m_delaysSeconds.empty())
-    {
-        const double sum = std::accumulate(m_delaysSeconds.begin(), m_delaysSeconds.end(), 0.0);
-        report.meanEndToEndDelay = sum / static_cast<double>(m_delaysSeconds.size());
-
-        std::vector<double> sorted = m_delaysSeconds;
-        std::sort(sorted.begin(), sorted.end());
-        const size_t middle = sorted.size() / 2;
-        report.medianEndToEndDelay =
-            (sorted.size() % 2 == 0) ? 0.5 * (sorted[middle - 1] + sorted[middle]) : sorted[middle];
-    }
-
-    // Éq. (27) : variation absolue des délais successifs, dans l'ordre de réception.
-    // Moins de deux paquets reçus rend le jitter indéfini, pas nul.
-    if (m_delaysSeconds.size() >= 2)
-    {
-        double absoluteVariation = 0.0;
-        for (size_t k = 1; k < m_delaysSeconds.size(); ++k)
-        {
-            absoluteVariation += std::fabs(m_delaysSeconds[k] - m_delaysSeconds[k - 1]);
-        }
-        report.jitter = absoluteVariation / static_cast<double>(m_delaysSeconds.size() - 1);
-    }
-
-    // Éq. (28) : NRO est indéfini si aucun paquet applicatif n'est livré.
-    if (m_applicationRxPackets > 0)
-    {
-        report.normalizedRoutingOverhead =
-            static_cast<double>(m_aodvControlTransmissions) / static_cast<double>(m_applicationRxPackets);
-    }
+    report.packetDeliveryRatio = derived.packetDeliveryRatio;
+    report.packetLossRatio = derived.packetLossRatio;
+    report.throughputBitsPerSecond = derived.throughputBitsPerSecond;
+    report.goodputBitsPerSecond = derived.goodputBitsPerSecond;
+    report.meanEndToEndDelay = derived.meanEndToEndDelay;
+    report.medianEndToEndDelay = derived.medianEndToEndDelay;
+    report.jitter = derived.jitter;
+    report.normalizedRoutingOverhead = derived.normalizedRoutingOverhead;
+    report.routeDiscoveryFrequency = derived.routeDiscoveryFrequency;
 
     // Éq. (29) : l'instrumentation des épisodes sans route n'est pas encore en place.
     // Le champ reste explicitement non renseigné plutôt que faussement nul.

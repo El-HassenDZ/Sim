@@ -7,6 +7,8 @@
 #ifndef MTC_AODV_METRICS_COLLECTOR_H
 #define MTC_AODV_METRICS_COLLECTOR_H
 
+#include "network-metrics.h"
+
 #include "ns3/application-container.h"
 #include "ns3/energy-source-container.h"
 #include "ns3/ipv4.h"
@@ -25,16 +27,11 @@ namespace ns3
 namespace mtcaodv
 {
 
-/**
- * \ingroup mtcaodv
- * \brief Valeur de métrique éventuellement non applicable.
- *
- * L'invariant 20.4.6 et la règle D-22 interdisent de produire un zéro fabriqué lorsqu'une
- * métrique est indéfinie. Le type rend l'absence *exprimable* : un dénominateur nul
- * donne un std::nullopt, exporté « NaN », et non un 0 qui serait indiscernable d'une
- * mesure réelle.
- */
-using MetricValue = std::optional<double>;
+// Le type MetricValue, les compteurs observés, les équations (20), (24)-(28) et la
+// règle d'export « NaN » sont définis dans network-metrics.h. Ce collecteur ne
+// réimplémente aucune de ces formules : il les alimente en compteurs observés et leur
+// délègue le calcul, de sorte qu'il n'existe qu'une seule définition du PDR dans le
+// dépôt (voir l'en-tête de network-metrics.h pour la justification).
 
 /**
  * \ingroup mtcaodv
