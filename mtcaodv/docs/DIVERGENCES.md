@@ -322,3 +322,30 @@ explicite.
 qu'une. Atténuation : **toutes les nouvelles étapes utilisent `PilotConfiguration` et
 `mtc-aodv-pilot`** ; le couple hérité n'est plus étendu. Convergence à programmer à
 l'étape 12, lorsque les paramètres physiques seront gelés.
+
+---
+
+## D-I12 — Prédicat de « route inverse valide » du hook A2.3
+
+**Prévu.** A2.3, ligne 2 : « if r_rev is absent or invalid then return CONTINUE_AODV ».
+La spécification n'explicite pas ce que « invalide » recouvre.
+
+**Implémenté.** Le hook forge si `LookupValidRoute(origin)` réussit, c'est-à-dire si une
+route inverse vers l'origine du RREQ existe avec le drapeau `VALID`. Il **n'exige pas**
+un numéro de séquence destination valide sur cette route.
+
+**Pourquoi.** Détecté par le test d'intégration T-08 (fixture S–R–D). Lorsque l'origine
+du RREQ est un **voisin direct** de l'attaquant, l'AODV d'origine place la route inverse
+et la route de voisin sur la même entrée de table, puis remet son drapeau de séquence à
+« invalide » (c'est le comportement stock, préservé — invariant 20.3.2). Un prédicat
+exigeant `GetValidSeqNo()` empêchait alors l'attaquant de forger contre une source
+voisine, alors que la route inverse était parfaitement utilisable pour émettre le RREP.
+`SendReply`/`SendReplyByIntermediateNode` honnêtes utilisent d'ailleurs `toOrigin` sans
+tester son seqno. Le prédicat retenu est donc celui qu'emploie l'AODV honnête pour juger
+une route exploitable.
+
+**Impact.** Rend l'attaque effective aussi contre une source voisine (cas fréquent en
+MANET dense). Aucun effet sur les nœuds honnêtes : le hook entier est inerte sans
+politique d'attaque. La correction a été validée : la fixture T-08 passe (RREP forgé ≥ 1,
+abandons ≥ 1, livraison strictement réduite) et le fork reste identique bit à bit à
+l'AODV standard sur 5 seeds honnêtes appariés.

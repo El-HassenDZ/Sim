@@ -242,6 +242,18 @@ def check_cross_fields(row: dict[str, str]) -> None:
                 "comptage réseau doit inclure la charge utile"
             )
 
+    # X-09 (étape 1) — sans attaquant, aucun événement d'attaque. Les colonnes de l'étape
+    # 1 sont facultatives : on ne contrôle que si elles sont présentes.
+    if "forgedRrepCount" in row and "blackholeDropCount" in row:
+        forged = _parse_integer(row["forgedRrepCount"], "forgedRrepCount")
+        dropped = _parse_integer(row["blackholeDropCount"], "blackholeDropCount")
+        if attacker_count == 0 and (forged != 0 or dropped != 0):
+            raise ValidationError(
+                f"X-09 : attackerCount = 0 mais forgedRrepCount = {forged}, "
+                f"blackholeDropCount = {dropped} ; aucun événement d'attaque n'est "
+                "possible sans attaquant"
+            )
+
 
 def check_manifest(csv_path: Path, row: dict[str, str]) -> dict:
     """Contrôle 4 : manifest MF-01 à MF-05. Retourne le manifest chargé."""
@@ -313,6 +325,29 @@ def check_manifest(csv_path: Path, row: dict[str, str]) -> dict:
             f"MF-05 : protocole {manifest.get('protocol')!r} dans le manifest, "
             f"{row['protocol']!r} dans le CSV"
         )
+
+    # MF-06 (étape 1) — cohérence des compteurs d'attaque manifest/CSV, et de l'indicateur
+    # « installed ». Contrôlé seulement si le manifest porte ces champs.
+    if "forgedRrepCount" in attack and "forgedRrepCount" in row:
+        if attack["forgedRrepCount"] != _parse_integer(row["forgedRrepCount"], "forgedRrepCount"):
+            raise ValidationError(
+                f"MF-06 : forgedRrepCount manifest {attack['forgedRrepCount']} != CSV "
+                f"{row['forgedRrepCount']}"
+            )
+    if "blackholeDropCount" in attack and "blackholeDropCount" in row:
+        if attack["blackholeDropCount"] != _parse_integer(row["blackholeDropCount"],
+                                                          "blackholeDropCount"):
+            raise ValidationError(
+                f"MF-06 : blackholeDropCount manifest {attack['blackholeDropCount']} != CSV "
+                f"{row['blackholeDropCount']}"
+            )
+    if "installed" in attack:
+        expected_installed = csv_attacker_count > 0
+        if bool(attack["installed"]) != expected_installed:
+            raise ValidationError(
+                f"MF-06 : attack.installed = {attack['installed']} mais attackerCount = "
+                f"{csv_attacker_count} (installed doit valoir attackerCount>0)"
+            )
 
     return manifest
 

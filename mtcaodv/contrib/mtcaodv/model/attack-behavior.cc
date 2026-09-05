@@ -26,5 +26,17 @@ AttackBehavior::GetTypeId()
     return tid;
 }
 
+void
+AttackBehavior::NotifyForgedReplySent(uint32_t)
+{
+    // Corps par défaut vide : un profil sans RREP forgé n'a rien à notifier.
+}
+
+void
+AttackBehavior::NotifyTransitPacketDropped(uint64_t, uint32_t, uint32_t)
+{
+    // Corps par défaut vide.
+}
+
 } // namespace mtcaodv
 } // namespace ns3

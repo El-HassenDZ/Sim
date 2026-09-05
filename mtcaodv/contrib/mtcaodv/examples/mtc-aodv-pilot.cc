@@ -51,6 +51,7 @@
 
 #include "ns3/aodv-module.h"
 #include "ns3/attack-manager.h"
+#include "ns3/blackhole-behavior.h"
 #include "ns3/cbr-traffic-applications.h"
 #include "ns3/core-module.h"
 #include "ns3/internet-module.h"
@@ -346,7 +347,10 @@ WriteManifest(const std::string& path,
               const AttackSelectionResult& attackers,
               const MetricsReport& report,
               const Ptr<TopologyProbe>& topology,
-              const std::map<uint16_t, FlowCounters>& flowCounters)
+              const std::map<uint16_t, FlowCounters>& flowCounters,
+              bool attackInstalled,
+              uint64_t forgedReplies,
+              uint64_t blackholeDrops)
 {
     std::ofstream file(path);
     if (!file)
@@ -357,7 +361,7 @@ WriteManifest(const std::string& path,
     file << std::setprecision(10);
     file << "{\n";
     file << "  \"ns3Version\": \"3.48\",\n";
-    file << "  \"step\": 0,\n";
+    file << "  \"step\": 1,\n";
     file << "  \"protocol\": \"" << ToString(config.protocol) << "\",\n";
     file << "  \"scenarioHash\": \"" << config.ComputeScenarioHash() << "\",\n";
     file << "  \"ipv4Network\": \"10.1.0.0\",\n";
@@ -377,7 +381,9 @@ WriteManifest(const std::string& path,
     // Les deux ratios sont exportés séparément : avec exclusion des endpoints, le ratio
     // parmi les nœuds admissibles diffère du ratio demandé.
     file << "  \"attack\": {\n";
-    file << "    \"installed\": false,\n";
+    file << "    \"installed\": " << (attackInstalled ? "true" : "false") << ",\n";
+    file << "    \"forgedRrepCount\": " << forgedReplies << ",\n";
+    file << "    \"blackholeDropCount\": " << blackholeDrops << ",\n";
     file << "    \"attackerRatioRequested\": "
          << FormatJsonNumber(attackers.GetRequestedRatio()) << ",\n";
     file << "    \"attackerRatioAmongEligible\": "
@@ -474,20 +480,24 @@ RunPilot(int argc, char* argv[])
     // -------------------------------------------------------------------------------
     // Garde-fou d'étape : l'attaque n'est pas encore câblée au protocole.
     //
-    // A2.3 (RREP forgé) et A2.4 (abandon silencieux) appartiennent à l'étape 1. Laisser
-    // ce programme accepter un ratio non nul produirait une ligne de résultats portant
-    // attackerRatio > 0 et attackerCount > 0 alors qu'aucun paquet n'aurait été
-    // détourné : la donnée serait fausse et polluerait toute agrégation ultérieure.
-    // L'option reste exposée — elle est normative — mais son emploi est refusé ici.
+    // À l'étape 1, le comportement Blackhole (A2.3, A2.4) est câblé dans le *fork*
+    // ns3::mtcaodv::RoutingProtocol. Le module standard src/aodv reste intact
+    // (invariant 20.3.1) et ne porte donc aucun hook d'attaque.
+    //
+    // Conséquence fail-closed : demander une attaque avec le protocole stock produirait
+    // une ligne étiquetée « attaquée » où aucun RREP ne serait forgé et aucun paquet
+    // détourné — une donnée fausse. On la refuse, en dirigeant vers le fork. La variante
+    // A du §16.2 (stock AODV honnête + attaquants forgeurs, piles mixtes) relève de
+    // l'étape 10 (admission sécurisée) et n'est pas couverte par ce pilote homogène.
     // -------------------------------------------------------------------------------
-    if (config.attackerRatio > 0.0)
+    if (config.attackerRatio > 0.0 && config.protocol == PilotProtocol::STOCK_AODV)
     {
         std::cerr << "mtc-aodv-pilot : --attackerRatio=" << config.attackerRatio
-                  << " refusé à l'étape 0.\n"
-                  << "  Le comportement Blackhole (A2.3, A2.4) n'est pas encore câblé au "
-                     "protocole ; une exécution étiquetée « attaquée » sans attaque réelle "
-                     "serait une donnée fabriquée.\n"
-                  << "  Utiliser --attackerRatio=0 pour la baseline de l'étape 0.\n";
+                  << " incompatible avec --protocol=aodv.\n"
+                  << "  Le module standard src/aodv n'est jamais modifié (invariant "
+                     "20.3.1) et ne porte aucun hook d'attaque ; une exécution « attaquée » "
+                     "sur ce protocole ne forgerait ni n'abandonnerait rien.\n"
+                  << "  Utiliser --protocol=mtcaodv pour une attaque câblée au fork.\n";
         return 1;
     }
 
@@ -534,6 +544,33 @@ RunPilot(int argc, char* argv[])
     attackManager.AssignStream(config.attackerSelectionStream);
     const AttackSelectionResult attackers =
         attackManager.SelectAttackers(nodes, config.attackerRatio, excludedIds);
+
+    // --- Installation des comportements Blackhole (A2, étape 1) ---------------------
+    //
+    // Une instance *distincte* est agrégée sur chaque attaquant (§8.2, invariant
+    // 20.4.3) : aucun compteur ni état mutable n'est partagé entre attaquants. Le fork
+    // la retrouvera par GetObject<AttackBehavior>() sur le Node, sans que la liste des
+    // attaquants ne transite jamais par un composant de détection (invariant 20.2.8).
+    //
+    // Les pointeurs sont conservés uniquement pour relire les compteurs *après* la
+    // simulation, côté évaluation hors ligne — jamais pour piloter la défense.
+    std::vector<Ptr<BlackholeBehavior>> behaviors;
+    for (uint32_t attackerId : attackers.GetAttackerIds())
+    {
+        Ptr<BlackholeBehavior> behavior = CreateObject<BlackholeBehavior>();
+        behavior->SetAttribute("AttackStartTime", TimeValue(Seconds(config.attackStartTime)));
+        behavior->SetAttribute("SequenceNumberOffset",
+                               UintegerValue(config.sequenceNumberOffset));
+        behavior->SetAttribute("AdvertisedHopCount",
+                               UintegerValue(config.advertisedHopCount));
+        behavior->SetAttribute("ForgedRouteLifetime",
+                               TimeValue(Seconds(config.forgedRouteLifetime)));
+        behavior->SetAttribute("DropTransitData", BooleanValue(config.dropTransitData));
+        behavior->SetAttribute("PreserveControlPlane",
+                               BooleanValue(config.preserveControlPlane));
+        NodeList::GetNode(attackerId)->AggregateObject(behavior);
+        behaviors.push_back(behavior);
+    }
 
     // --- Trafic CBR UDP -------------------------------------------------------------
     ApplicationContainer sources;
@@ -586,6 +623,16 @@ RunPilot(int argc, char* argv[])
 
     Simulator::Stop(config.GetSimulationEnd());
     Simulator::Run();
+
+    // Relecture des compteurs d'attaque, côté évaluation hors ligne uniquement (A2,
+    // ligne finale ; invariant 20.2.8 : cette lecture ne nourrit aucune défense).
+    uint64_t totalForgedReplies = 0;
+    uint64_t totalBlackholeDrops = 0;
+    for (const Ptr<BlackholeBehavior>& behavior : behaviors)
+    {
+        totalForgedReplies += behavior->GetForgedReplyCount();
+        totalBlackholeDrops += behavior->GetTransitDropCount();
+    }
 
     const MetricsReport report = metrics->ComputeReport();
 
@@ -642,6 +689,14 @@ RunPilot(int argc, char* argv[])
     record.SetMetric("jitter_s", report.jitter);
     record.SetMetric("nro", report.normalizedRoutingOverhead);
     record.SetMetric("rdf_per_s", report.routeDiscoveryFrequency);
+
+    // Colonnes de l'étape 1, ajoutées après celles de l'étape 0 (continuité du schéma).
+    // Ce sont des compteurs observés à l'exécution, jamais déduits : à ratio nul ils
+    // valent légitimement 0 (aucune attaque installée), ce qui n'est pas un « faux zéro »
+    // mais l'absence réelle d'événement d'attaque.
+    record.SetUnsigned("forgedRrepCount", totalForgedReplies);
+    record.SetUnsigned("blackholeDropCount", totalBlackholeDrops);
+
     record.SetUnsigned("aodvControlTx", report.aodvControlTransmissions);
     record.SetUnsigned("routeDiscoveries", report.routeDiscoveries);
     record.SetUnsigned("deliveredNetworkBytes", report.deliveredNetworkBytes);
@@ -655,13 +710,18 @@ RunPilot(int argc, char* argv[])
     record.SetString("propagation", ToString(config.propagation));
     record.SetString("scenarioHash", config.ComputeScenarioHash());
 
+    const bool attackInstalled = !behaviors.empty();
+
     record.WriteCsv(prefix + "_metrics.csv");
     WriteManifest(prefix + "_manifest.json",
                   config,
                   attackers,
                   report,
                   topology,
-                  metrics->GetFlowCounters());
+                  metrics->GetFlowCounters(),
+                  attackInstalled,
+                  totalForgedReplies,
+                  totalBlackholeDrops);
 
     // --- Résumé console -------------------------------------------------------------
     std::cout << "protocole=" << ToString(config.protocol) << " N=" << config.nodeCount
@@ -678,6 +738,10 @@ RunPilot(int argc, char* argv[])
               << "  NRO=" << FormatMetric(report.normalizedRoutingOverhead)
               << " découvertes=" << report.routeDiscoveries
               << " fenêtre=" << report.evaluationWindowSeconds << " s" << '\n'
+              << "  attaque : N_A=" << attackers.GetAttackerCount()
+              << " installée=" << (attackInstalled ? "oui" : "non")
+              << " RREP forgés=" << totalForgedReplies
+              << " drops Blackhole=" << totalBlackholeDrops << '\n'
               << "  scenarioHash=" << config.ComputeScenarioHash() << '\n';
 
     std::cout << "  par flux :";

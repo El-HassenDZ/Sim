@@ -227,6 +227,16 @@ PilotConfiguration::RegisterCommandLine(CommandLine& commandLine,
     commandLine.AddValue("excludeTrafficEndpoints",
                          "Exclure sources et puits du tirage d'attaquants",
                          excludeTrafficEndpoints);
+    commandLine.AddValue("seqOffset", "Surcroît de séquence forgé Delta_seq (Éq. 23)",
+                         sequenceNumberOffset);
+    commandLine.AddValue("advertisedHops", "Sauts annoncés h_fake dans le RREP forgé",
+                         advertisedHopCount);
+    commandLine.AddValue("forgedLifetime", "Durée de route forgée T_fake (s)",
+                         forgedRouteLifetime);
+    commandLine.AddValue("dropTransitData", "Abandonner les données en transit (A2.4)",
+                         dropTransitData);
+    commandLine.AddValue("preserveControlPlane", "Exempter le plan de contrôle de l'abandon",
+                         preserveControlPlane);
     commandLine.AddValue("positionStream", "Index RNG du placement initial", positionStream);
     commandLine.AddValue("mobilityStream", "Index RNG de la mobilité", mobilityStream);
     commandLine.AddValue("wifiStream", "Index RNG de la couche Wi-Fi", wifiStream);
@@ -306,6 +316,10 @@ PilotConfiguration::Validate() const
         require(attackStartTime < simulationTime - drainTime,
                 "l'attaque commencerait après la dernière émission : elle serait inobservable");
     }
+    // h_fake est sérialisé dans le champ hop count 8 bits du RrepHeader AODV : au-delà de
+    // 255 il déborderait silencieusement. On refuse plutôt que de tronquer.
+    require(advertisedHopCount <= 255, "advertisedHops dépasse le champ 8 bits du RREP");
+    require(forgedRouteLifetime >= 0.0, "forgedLifetime négatif");
 
     // --- Flux RNG -------------------------------------------------------------------
     require(positionStream >= 0 && mobilityStream >= 0 && wifiStream >= 0 &&
@@ -359,6 +373,11 @@ PilotConfiguration::Describe() const
         {"attackerRatio", asString(attackerRatio)},
         {"attackStartTime", asString(attackStartTime)},
         {"excludeTrafficEndpoints", excludeTrafficEndpoints ? "1" : "0"},
+        {"sequenceNumberOffset", asString(sequenceNumberOffset)},
+        {"advertisedHopCount", asString(advertisedHopCount)},
+        {"forgedRouteLifetime", asString(forgedRouteLifetime)},
+        {"dropTransitData", dropTransitData ? "1" : "0"},
+        {"preserveControlPlane", preserveControlPlane ? "1" : "0"},
         {"seed", asString(seed)},
         {"run", asString(run)},
         {"positionStream", asString(positionStream)},

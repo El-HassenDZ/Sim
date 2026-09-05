@@ -12,7 +12,10 @@
     {
       "name": "protocol",
       "type": "string",
-      "allowed": ["aodv", "mtcaodv"],
+      "allowed": [
+        "aodv",
+        "mtcaodv"
+      ],
       "nanAllowed": false,
       "description": "Protocole de routage installé. 'aodv' = module standard src/aodv non modifié."
     },
@@ -193,6 +196,10 @@
     {
       "id": "X-08",
       "description": "Un appTxPackets nul rend l'exécution invalide pour le PDR (§21) : le run est rejeté."
+    },
+    {
+      "id": "X-09",
+      "description": "Si attackerCount = 0 alors forgedRrepCount = 0 et blackholeDropCount = 0 (aucun événement d'attaque sans attaquant)."
     }
   ],
   "manifestChecks": [
@@ -215,6 +222,27 @@
     {
       "id": "MF-05",
       "description": "Les paramètres du manifest reproduisent les colonnes de condition du CSV."
+    },
+    {
+      "id": "MF-06",
+      "description": "attack.forgedRrepCount et attack.blackholeDropCount égalent les colonnes CSV homonymes ; attack.installed = (attackerCount>0)."
+    }
+  ],
+  "optionalColumns_step1": [
+    {
+      "name": "forgedRrepCount",
+      "type": "integer",
+      "min": 0,
+      "nanAllowed": false,
+      "equation": "23",
+      "description": "RREP Blackhole forgés réellement émis (A2.3). 0 si aucune attaque installée."
+    },
+    {
+      "name": "blackholeDropCount",
+      "type": "integer",
+      "min": 0,
+      "nanAllowed": false,
+      "description": "Paquets de données en transit consommés par les attaquants (A2.4). 0 si aucune attaque."
     }
   ]
 }

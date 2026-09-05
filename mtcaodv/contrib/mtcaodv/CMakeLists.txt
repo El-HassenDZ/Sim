@@ -64,4 +64,5 @@ build_lib(
   TEST_SOURCES
     test/mtcaodv-attack-test-suite.cc
     test/mtcaodv-metrics-test-suite.cc
+    test/mtcaodv-blackhole-integration-test-suite.cc
 )

@@ -22,6 +22,8 @@
 #include "mtc-aodv-rqueue.h"
 #include "mtc-aodv-rtable.h"
 
+#include "attack-behavior.h"
+
 #include "ns3/ipv4-interface.h"
 #include "ns3/ipv4-l3-protocol.h"
 #include "ns3/ipv4-routing-protocol.h"
@@ -422,6 +424,21 @@ class RoutingProtocol : public Ipv4RoutingProtocol
      * @param toOrigin routing table entry to originator
      */
     void SendReply(const RreqHeader& rreqHeader, const RoutingTableEntry& toOrigin);
+    /**
+     * \brief Émettre un RREP Blackhole forgé en réponse à un RREQ (A2.3, Éq. 23).
+     *
+     * Réservé aux nœuds portant une politique d'attaque active. Le RREP produit a le
+     * format AODV standard — aucun champ caché — afin qu'un nœud honnête le reçoive
+     * comme un RREP ordinaire (invariant 20.3.5). Seuls la fraîcheur, le nombre de sauts
+     * et la durée de vie annoncés sont falsifiés, conformément au profil de la politique.
+     *
+     * \param rreqHeader en-tête du RREQ reçu (fournit destination, origine, seq observé)
+     * \param toOrigin route inverse vers l'origine du RREQ (fournit le prochain saut)
+     * \param behavior politique d'attaque du nœud, qui construit le profil forgé
+     */
+    void SendForgedReply(const RreqHeader& rreqHeader,
+                         const RoutingTableEntry& toOrigin,
+                         Ptr<AttackBehavior> behavior);
     /** Send RREP by intermediate node
      * @param toDst routing table entry to destination
      * @param toOrigin routing table entry to originator
@@ -492,6 +509,31 @@ class RoutingProtocol : public Ipv4RoutingProtocol
     Ptr<UniformRandomVariable> m_uniformRandomVariable;
     /// Keep track of the last bcast time
     Time m_lastBcastTime;
+
+    // --- Intégration de la couche attaque (Étape 1, A2.3/A2.4) ---------------------
+    //
+    // Le fork n'implémente aucune logique d'attaque : il délègue toute décision à une
+    // AttackBehavior agrégée sur le nœud par la couche scénario. Cette indirection
+    // garantit que la vérité terrain reste confinée au scénario (invariant 20.2.8) et
+    // qu'un nœud honnête — qui ne porte aucune politique — exécute exactement l'AODV
+    // d'origine, sans branche morte observable.
+    //
+    /// Politique d'attaque du nœud, ou nullptr s'il est honnête. Résolue paresseusement.
+    Ptr<AttackBehavior> m_attackBehavior;
+    /// Vrai une fois la résolution tentée : elle n'a lieu qu'une fois, au premier besoin.
+    bool m_attackBehaviorResolved;
+
+    /**
+     * \brief Résout et met en cache la politique d'attaque agrégée sur le nœud.
+     *
+     * La résolution est paresseuse car la couche scénario agrège la politique *après*
+     * l'installation de la pile ; elle est donc absente à la construction mais présente
+     * dès le premier événement de simulation. Le résultat est mis en cache : un nœud
+     * honnête paie une seule recherche infructueuse, puis plus rien.
+     *
+     * \return la politique d'attaque, ou nullptr pour un nœud honnête
+     */
+    Ptr<AttackBehavior> ResolveAttackBehavior();
 };
 
 } // namespace mtcaodv

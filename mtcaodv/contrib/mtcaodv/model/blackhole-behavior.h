@@ -62,12 +62,14 @@ class BlackholeBehavior : public AttackBehavior
      * décision : le compteur mesure des RREP réellement émis, pas des intentions
      * (§8.1, « observé seulement à l'exécution »).
      */
-    void NotifyForgedReplySent(uint32_t destinationSequenceNumber);
+    void NotifyForgedReplySent(uint32_t destinationSequenceNumber) override;
 
     /**
      * \brief Enregistrer l'abandon effectif d'un paquet en transit.
      */
-    void NotifyTransitPacketDropped(uint64_t packetUid, uint32_t sourceAddress, uint32_t destinationAddress);
+    void NotifyTransitPacketDropped(uint64_t packetUid,
+                                    uint32_t sourceAddress,
+                                    uint32_t destinationAddress) override;
 
     uint32_t GetForgedReplyCount() const;
     uint32_t GetTransitDropCount() const;

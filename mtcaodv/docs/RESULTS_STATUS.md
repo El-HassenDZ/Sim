@@ -126,6 +126,42 @@ l'étude confirmatoire).
 
 ---
 
+## Étape 1 — Blackholes multiples câblés au fork
+
+Toutes les lignes proviennent d'exécutions réelles sur ns-3.48, profil `default`.
+Configuration de référence de l'étape 0, `--protocol=mtcaodv`, attaque à `t=10 s`,
+`r_a = 0,20` (donc `N_A = 4` par l'Éq. 2), seeds 1001–1006, appariées avec les mêmes
+seeds sans attaque.
+
+| Contrôle | Statut | Détail |
+|---|---|---|
+| Câblage A2.3/A2.4 dans le fork | **MESURÉ** | RREP forgé émis et données en transit abandonnées ; compilation exit 0 |
+| Fork honnête ≡ AODV standard (non-régression après hooks) | **MESURÉ** | 5 seeds appariés, 0 divergence sur les 9 colonnes de mesure |
+| Test d'intégration T-08 (chaîne causale S–R–D) | **MESURÉ** | suite `mtcaodv-blackhole-integration` PASS |
+| Suites `mtcaodv-attack`, `mtcaodv-metrics` | **MESURÉ** | PASS (non-régression) |
+| Tests Python (24, dont X-09, MF-06) | **MESURÉ** | OK |
+| Reproductibilité de la ligne attaquée | **MESURÉ** | même seed exécuté deux fois : CSV identique |
+
+**Effet mesuré de l'attaque (appariement clean vs attaqué, 6 seeds) :**
+
+| Condition | PDR moyen | écart-type | médiane | min | max |
+|---|---:|---:|---:|---:|---:|
+| sans attaque (r_a = 0) | 0,830 | 0,103 | 0,883 | 0,631 | 0,893 |
+| attaque r_a = 0,20 | 0,266 | 0,096 | 0,289 | 0,129 | 0,386 |
+
+Par seed, RREP forgés ∈ [21, 54] et abandons Blackhole ∈ [377, 581] ; le PDR baisse à
+chaque seed sans exception. La variance du nombre de RREP forgés est attendue : elle
+dépend du nombre de RREQ que chaque attaquant intercepte, lui-même fonction de la
+topologie mobile. Aucun seed n'a été écarté.
+
+**Interprétation.** La chaîne causale A2 est établie : forge de RREP attractifs →
+attraction de routes → abandon silencieux du transit → chute du PDR. La baseline saine
+mesurée à l'étape 0 (≈ 0,83) borne mécaniquement le PDR attaqué : l'attaque retire des
+paquets à un réseau qui n'en livrait déjà pas 100 %. Ces chiffres ne sont pas
+confirmatoires (6 seeds < 30 requis par A7).
+
+---
+
 ## Limite d'exécution de l'environnement de développement
 
 La campagne confirmatoire A7 exige au minimum 5 variantes × 4 ratios × 30 seeds = **600

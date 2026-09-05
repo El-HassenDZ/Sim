@@ -213,10 +213,19 @@ struct PilotConfiguration
      */
     double drainTime{5.0};
 
-    // --- Attaque (paramètres exposés dès l'étape 0, câblage à l'étape 1) -------------
+    // --- Attaque (câblée au fork à l'étape 1) ---------------------------------------
     double attackerRatio{0.0};   //!< \f$r_a\f$, sans unité, dans [0,1].
     double attackStartTime{10.0};//!< \f$t_{attack}\f$, en s.
     bool excludeTrafficEndpoints{true}; //!< Exclure sources et puits du tirage d'attaquants.
+
+    // Profil full Blackhole (§8.1, Annexe C). Ces valeurs restent configurables car ni
+    // le plan de développement ni la spécification ne les gèlent pour le pilote ; seule
+    // leur sémantique (Éq. 23, règle d'abandon) est fixée.
+    uint32_t sequenceNumberOffset{1000}; //!< \f$\Delta_{seq}\f$, Éq. (23).
+    uint32_t advertisedHopCount{1};      //!< \f$h_{fake}\f$, sauts annoncés.
+    double forgedRouteLifetime{30.0};    //!< \f$T_{fake}\f$, durée annoncée, en s.
+    bool dropTransitData{true};          //!< Abandonner les données en transit (A2.4).
+    bool preserveControlPlane{true};     //!< Exempter le plan de contrôle de l'abandon.
 
     // --- Flux RNG réservés (A7.1) ---------------------------------------------------
     // Plages disjointes par composant : deux variantes appariées consomment exactement

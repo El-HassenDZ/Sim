@@ -295,6 +295,58 @@ class ValidateStep0TestCase(unittest.TestCase):
             check_pairing([first, second])
         self.assertIn("plusieurs fois", str(context.exception))
 
+    # --- Colonnes et contrôles de l'étape 1 ----------------------------------------
+
+    def _attacked_columns(self) -> list[tuple[str, str]]:
+        """Exécution attaquée cohérente : 4 attaquants, compteurs d'attaque non nuls."""
+        columns = self.with_column({"attackerRatio": "0.2", "attackerCount": "4"})
+        columns += [("forgedRrepCount", "21"), ("blackholeDropCount", "581")]
+        return columns
+
+    def _attacked_manifest(self) -> dict:
+        manifest = copy.deepcopy(REFERENCE_MANIFEST)
+        manifest["attack"] = {
+            "installed": True,
+            "forgedRrepCount": 21,
+            "blackholeDropCount": 581,
+            "attackerRatioRequested": 0.2,
+            "attackerRatioAmongEligible": 0.333333333,
+            "attackerCount": 4,
+            "eligibleCount": 12,
+            "attackerNodeIds": [1, 5, 11, 19],
+        }
+        return manifest
+
+    def test_attacked_run_with_step1_columns_is_valid(self):
+        summary = validate_run(
+            self.write_run("atk", self._attacked_columns(), self._attacked_manifest()),
+            self.schema,
+        )
+        self.assertEqual(summary["row"]["attackerCount"], "4")
+
+    def test_x09_attack_counters_without_attacker_is_rejected(self):
+        """X-09 : des RREP forgés sans attaquant sont impossibles."""
+        columns = list(REFERENCE_COLUMNS) + [("forgedRrepCount", "5"),
+                                             ("blackholeDropCount", "0")]
+        with self.assertRaises(ValidationError) as context:
+            validate_run(self.write_run("ghost", columns), self.schema)
+        self.assertIn("X-09", str(context.exception))
+
+    def test_mf06_counter_mismatch_is_rejected(self):
+        """MF-06 : le compteur du manifest doit égaler celui du CSV."""
+        manifest = self._attacked_manifest()
+        manifest["attack"]["forgedRrepCount"] = 999  # incohérent avec le CSV (21)
+        with self.assertRaises(ValidationError) as context:
+            validate_run(self.write_run("mf6", self._attacked_columns(), manifest), self.schema)
+        self.assertIn("MF-06", str(context.exception))
+
+    def test_mf06_installed_flag_must_match_attacker_count(self):
+        manifest = self._attacked_manifest()
+        manifest["attack"]["installed"] = False  # incohérent : attackerCount = 4
+        with self.assertRaises(ValidationError) as context:
+            validate_run(self.write_run("mf6b", self._attacked_columns(), manifest), self.schema)
+        self.assertIn("MF-06", str(context.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

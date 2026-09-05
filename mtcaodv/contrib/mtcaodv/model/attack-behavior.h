@@ -118,6 +118,29 @@ class AttackBehavior : public Object
      */
     virtual TransitPacketDecision ShouldDropTransitPacket(Time now,
                                                           const TransitPacketContext& context) const = 0;
+
+    /**
+     * \brief Notifier l'émission effective d'un RREP forgé (A2.3, ligne 9).
+     *
+     * Appelée par le protocole *après* sérialisation réussie, jamais au moment de la
+     * décision : la politique compte des RREP réellement émis, pas des intentions.
+     * Le corps par défaut est vide, de sorte qu'un futur profil d'attaque sans RREP
+     * forgé n'ait rien à implémenter.
+     *
+     * \param destinationSequenceNumber numéro de séquence forgé effectivement annoncé
+     */
+    virtual void NotifyForgedReplySent(uint32_t destinationSequenceNumber);
+
+    /**
+     * \brief Notifier l'abandon effectif d'un paquet de données en transit (A2.4, ligne 5).
+     *
+     * \param packetUid identifiant du paquet consommé
+     * \param sourceAddress adresse source IPv4 (entier hôte)
+     * \param destinationAddress adresse destination IPv4 (entier hôte)
+     */
+    virtual void NotifyTransitPacketDropped(uint64_t packetUid,
+                                            uint32_t sourceAddress,
+                                            uint32_t destinationAddress);
 };
 
 } // namespace mtcaodv

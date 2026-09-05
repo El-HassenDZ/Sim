@@ -17,6 +17,7 @@
 #include "mtc-aodv-routing-protocol.h"
 
 #include "ns3/adhoc-wifi-mac.h"
+#include "ns3/node.h"
 #include "ns3/boolean.h"
 #include "ns3/inet-socket-address.h"
 #include "ns3/log.h"
@@ -169,7 +170,9 @@ RoutingProtocol::RoutingProtocol()
       m_htimer(Timer::CANCEL_ON_DESTROY),
       m_rreqRateLimitTimer(Timer::CANCEL_ON_DESTROY),
       m_rerrRateLimitTimer(Timer::CANCEL_ON_DESTROY),
-      m_lastBcastTime()
+      m_lastBcastTime(),
+      m_attackBehavior(nullptr),
+      m_attackBehaviorResolved(false)
 {
     m_nb.SetCallback(MakeCallback(&RoutingProtocol::SendRerrWhenBreaksLinkToNextHop, this));
 }
@@ -638,6 +641,49 @@ RoutingProtocol::Forwarding(Ptr<const Packet> p,
     NS_LOG_FUNCTION(this);
     Ipv4Address dst = header.GetDestination();
     Ipv4Address origin = header.GetSource();
+
+    // --- Hook d'attaque A2.4 -------------------------------------------------------
+    //
+    // Forwarding() n'est appelé que pour un paquet réellement en transit (RouteInput a
+    // déjà écarté la livraison locale et la diffusion). C'est donc le point exact où un
+    // full Blackhole consomme les données. Un nœud honnête ne porte pas de politique et
+    // saute intégralement ce bloc.
+    Ptr<AttackBehavior> attack = ResolveAttackBehavior();
+    if (attack)
+    {
+        // Classification contrôle/données. Le plan de contrôle AODV est reconnu au port
+        // UDP 654 ; à ce stade le paquet ne porte plus son en-tête IPv4 (retiré par la
+        // pile avant RouteInput), donc l'en-tête UDP est en tête de p. Le plan de
+        // contrôle de sécurité MTC-AODV n'existe pas encore (étapes ultérieures) : son
+        // indicateur reste faux.
+        TransitPacketContext context;
+        context.isLocallyDestined = false; // garanti par le contrat de Forwarding().
+        context.isSecurityControl = false;
+        if (header.GetProtocol() == UdpL4Protocol::PROT_NUMBER)
+        {
+            UdpHeader udpHeader;
+            p->PeekHeader(udpHeader);
+            context.isRoutingControl = (udpHeader.GetDestinationPort() == AODV_PORT);
+        }
+
+        if (attack->ShouldDropTransitPacket(Simulator::Now(), context) ==
+            TransitPacketDecision::DROP_SILENTLY)
+        {
+            // A2.4, lignes 5-7 : compter, tracer, puis consommer le paquet sans callback
+            // de transfert ET sans RERR. L'absence de RERR est essentielle — un RERR
+            // trahirait l'attaquant et déclencherait une redécouverte, alors qu'un
+            // Blackhole veut au contraire conserver la route qui le désigne.
+            attack->NotifyTransitPacketDropped(p->GetUid(),
+                                               origin.Get(),
+                                               dst.Get());
+            NS_LOG_DEBUG("Blackhole : paquet " << p->GetUid() << " consommé silencieusement");
+            // Retourner true = « pris en charge » : la pile IP ne tente rien d'autre. Le
+            // paquet disparaît sans erreur visible, ce qui est exactement l'effet full
+            // Blackhole recherché.
+            return true;
+        }
+    }
+
     m_routingTable.Purge();
     RoutingTableEntry toDst;
     if (m_routingTable.LookupRoute(dst, toDst))
@@ -1430,6 +1476,36 @@ RoutingProtocol::RecvRequest(Ptr<Packet> p, Ipv4Address receiver, Ipv4Address sr
                           << static_cast<uint32_t>(rreqHeader.GetHopCount()) << " ID "
                           << rreqHeader.GetId() << " to destination " << rreqHeader.GetDst());
 
+    // --- Hook d'attaque A2.3 -------------------------------------------------------
+    //
+    // Placé ici, après l'établissement de la route inverse (toOrigin) et avant toute
+    // règle de réponse légitime : l'attaquant a besoin de la route inverse pour émettre
+    // son RREP forgé, et la spécification demande qu'il « arrête le traitement ordinaire
+    // du RREQ » une fois le RREP forgé émis (A2.3, ligne 10).
+    //
+    // Un nœud honnête ne porte pas de politique : ResolveAttackBehavior() renvoie
+    // nullptr et l'exécution se poursuit exactement comme l'AODV d'origine.
+    Ptr<AttackBehavior> attack = ResolveAttackBehavior();
+    if (attack)
+    {
+        RoutingTableEntry toOriginForAttack;
+        // « Route inverse valide » = un chemin utilisable vers l'origine (drapeau VALID),
+        // ce dont le RREP a besoin pour atteindre sa cible. On n'exige PAS un numéro de
+        // séquence valide : lorsque l'origine du RREQ est un voisin direct, AODV place la
+        // route inverse et la route de voisin sur la même entrée et remet le drapeau de
+        // séquence à « invalide » (comportement d'origine, préservé — invariant 20.3).
+        // Exiger un seqno valide empêcherait alors à tort de forger, alors même que la
+        // route inverse est parfaitement utilisable. LookupValidRoute applique exactement
+        // le prédicat qu'utilise l'AODV honnête pour juger une route exploitable.
+        const bool hasReverseRoute = m_routingTable.LookupValidRoute(origin, toOriginForAttack);
+        if (attack->ShouldForgeRouteReply(Simulator::Now(), hasReverseRoute) ==
+            RouteReplyDecision::FORGE_REPLY)
+        {
+            SendForgedReply(rreqHeader, toOriginForAttack, attack);
+            return; // A2.3, ligne 10 : traitement ordinaire du RREQ abandonné.
+        }
+    }
+
     //  A node generates a RREP if either:
     //  (i)  it is itself the destination,
     if (IsMyOwnAddress(rreqHeader.GetDst()))
@@ -1547,6 +1623,71 @@ RoutingProtocol::SendReply(const RreqHeader& rreqHeader, const RoutingTableEntry
     Ptr<Socket> socket = FindSocketWithInterfaceAddress(toOrigin.GetInterface());
     NS_ASSERT(socket);
     socket->SendTo(packet, 0, InetSocketAddress(toOrigin.GetNextHop(), AODV_PORT));
+}
+
+Ptr<AttackBehavior>
+RoutingProtocol::ResolveAttackBehavior()
+{
+    // Résolution paresseuse et unique. La couche scénario agrège la politique sur le
+    // Node après l'installation de la pile ; elle est donc absente à la construction du
+    // protocole mais présente au premier événement de simulation. On mémorise aussi
+    // l'échec (m_attackBehavior reste nullptr) pour qu'un nœud honnête ne refasse pas la
+    // recherche à chaque paquet.
+    if (!m_attackBehaviorResolved)
+    {
+        m_attackBehaviorResolved = true;
+        if (m_ipv4)
+        {
+            Ptr<Node> node = m_ipv4->GetObject<Node>();
+            if (node)
+            {
+                m_attackBehavior = node->GetObject<AttackBehavior>();
+            }
+        }
+    }
+    return m_attackBehavior;
+}
+
+void
+RoutingProtocol::SendForgedReply(const RreqHeader& rreqHeader,
+                                 const RoutingTableEntry& toOrigin,
+                                 Ptr<AttackBehavior> behavior)
+{
+    NS_LOG_FUNCTION(this << rreqHeader.GetDst());
+
+    // A2.3, ligne 3 : seq_fake = (seq_observed + Delta_seq) mod 2^32. La politique
+    // applique l'Éq. (23) ; le repliement uint32_t réalise le modulo. Le numéro observé
+    // est celui porté par le RREQ pour la destination demandée.
+    const ForgedReplyProfile profile = behavior->CreateForgedReplyProfile(rreqHeader.GetDstSeqno());
+
+    // A2.3, lignes 4-6 : RREP au format AODV standard. Aucun champ n'est ajouté ni caché
+    // (invariant 20.3.5) — seuls fraîcheur, sauts et durée de vie sont ceux du profil
+    // d'attaque. La destination annoncée est celle du RREQ, l'origine est l'émetteur du
+    // RREQ (destination de la route inverse), exactement comme un RREP légitime.
+    RrepHeader rrepHeader(/*prefixSize=*/0,
+                          /*hopCount=*/profile.advertisedHopCount,
+                          /*dst=*/rreqHeader.GetDst(),
+                          /*dstSeqNo=*/profile.destinationSequenceNumber,
+                          /*origin=*/toOrigin.GetDestination(),
+                          /*lifetime=*/profile.routeLifetime);
+
+    Ptr<Packet> packet = Create<Packet>();
+    SocketIpTtlTag tag;
+    // A2.3, ligne 7 : TTL = nombre de sauts de la route inverse, comme pour SendReply().
+    tag.SetTtl(toOrigin.GetHop());
+    packet->AddPacketTag(tag);
+    packet->AddHeader(rrepHeader);
+    TypeHeader tHeader(AODVTYPE_RREP);
+    packet->AddHeader(tHeader);
+
+    Ptr<Socket> socket = FindSocketWithInterfaceAddress(toOrigin.GetInterface());
+    NS_ASSERT(socket);
+    // A2.3, ligne 8 : unicast vers le prochain saut de la route inverse, port AODV 654.
+    socket->SendTo(packet, 0, InetSocketAddress(toOrigin.GetNextHop(), AODV_PORT));
+
+    // A2.3, ligne 9 : le compteur ne s'incrémente qu'après une sérialisation/émission
+    // réussie, jamais au moment de la décision.
+    behavior->NotifyForgedReplySent(profile.destinationSequenceNumber);
 }
 
 void
