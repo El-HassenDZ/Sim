@@ -1,7 +1,0 @@
-# Dépendances Python de l'orchestration et de l'analyse (A7.2, A7.3).
-# Aucune de ces bibliothèques n'intervient dans la simulation elle-même.
-pytest>=8.0      # tests de la couche Python
-numpy>=1.26      # agrégation numérique
-scipy>=1.11      # oracle indépendant pour la CDF/quantile Beta (T-19), tests appariés
-pandas>=2.0      # manipulation des CSV de résultats
-matplotlib>=3.8  # figures
