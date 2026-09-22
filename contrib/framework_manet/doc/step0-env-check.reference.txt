@@ -1,0 +1,141 @@
+=== framework_manet :: STEP 0 :: environment check ===
+[build]
+  ns3Version    : 3.48  (cible 3.48) OK
+  buildProfile  : debug
+  NS_ASSERT     : ON
+  NS_LOG        : ON
+  GSL           : OFF  -> erreur DSSS/CCK 5.5/11 Mbit/s : approximation Matlab
+  int64x64      : int128
+  compiler      : gcc 13.3.0
+  __cplusplus   : 202100
+  executable    : /home/user/ns3ref/ns-3-dev-ns-3.48/build/contrib/framework_manet/examples/ns3.48-framework-manet-env-check-default
+[api-contract]  62 exigences
+  SUPPORTED  STEP 1  TYPE_ID      ns3::aodv::RoutingProtocol
+             enregistré : ns3::aodv::RoutingProtocol
+  SUPPORTED  STEP 1  ATTRIBUTE    ns3::aodv::RoutingProtocol::EnableHello
+             défaut=true (déclaré dans ns3::aodv::RoutingProtocol)
+  SUPPORTED  STEP 1  ATTRIBUTE    ns3::aodv::RoutingProtocol::HelloInterval
+             défaut=+1e+09ns (déclaré dans ns3::aodv::RoutingProtocol)
+  SUPPORTED  STEP 1  TYPE_ID      ns3::AdhocWifiMac
+             enregistré : ns3::AdhocWifiMac
+  SUPPORTED  STEP 1  TYPE_ID      ns3::YansWifiPhy
+             enregistré : ns3::YansWifiPhy
+  SUPPORTED  STEP 1  TYPE_ID      ns3::YansWifiChannel
+             enregistré : ns3::YansWifiChannel
+  SUPPORTED  STEP 1  ATTRIBUTE    ns3::YansWifiPhy::TxPowerStart
+             défaut=16.0206 (déclaré dans ns3::WifiPhy)
+  SUPPORTED  STEP 1  ATTRIBUTE    ns3::YansWifiPhy::TxPowerEnd
+             défaut=16.0206 (déclaré dans ns3::WifiPhy)
+  SUPPORTED  STEP 1  ATTRIBUTE    ns3::YansWifiPhy::TxPowerLevels
+             défaut=1 (déclaré dans ns3::WifiPhy)
+  SUPPORTED  STEP 1  ATTRIBUTE    ns3::YansWifiPhy::RxSensitivity
+             défaut=-101 (déclaré dans ns3::WifiPhy)
+  SUPPORTED  STEP 1  ATTRIBUTE    ns3::YansWifiPhy::CcaEdThreshold
+             défaut=-62 (déclaré dans ns3::WifiPhy)
+  SUPPORTED  STEP 1  ATTRIBUTE    ns3::YansWifiPhy::RxNoiseFigure
+             défaut=7 (déclaré dans ns3::WifiPhy)
+  SUPPORTED  STEP 1  TYPE_ID      ns3::ConstantRateWifiManager
+             enregistré : ns3::ConstantRateWifiManager
+  SUPPORTED  STEP 1  ATTRIBUTE    ns3::ConstantRateWifiManager::DataMode
+             défaut=OfdmRate6Mbps (déclaré dans ns3::ConstantRateWifiManager)
+  SUPPORTED  STEP 1  ATTRIBUTE    ns3::ConstantRateWifiManager::ControlMode
+             défaut=OfdmRate6Mbps (déclaré dans ns3::ConstantRateWifiManager)
+  SUPPORTED  STEP 1  ATTRIBUTE    ns3::ConstantRateWifiManager::NonUnicastMode
+             défaut=Invalid-WifiMode (déclaré dans ns3::WifiRemoteStationManager)
+  SUPPORTED  STEP 1  TRACE_SOURCE ns3::WifiPhy::MonitorSnifferTx
+             signature=ns3::WifiPhy::MonitorSnifferTxTracedCallback (déclarée dans ns3::WifiPhy)
+  SUPPORTED  STEP 1  TYPE_ID      ns3::LogDistancePropagationLossModel
+             enregistré : ns3::LogDistancePropagationLossModel
+  SUPPORTED  STEP 1  ATTRIBUTE    ns3::LogDistancePropagationLossModel::Exponent
+             défaut=3 (déclaré dans ns3::LogDistancePropagationLossModel)
+  SUPPORTED  STEP 1  ATTRIBUTE    ns3::LogDistancePropagationLossModel::ReferenceDistance
+             défaut=1 (déclaré dans ns3::LogDistancePropagationLossModel)
+  SUPPORTED  STEP 1  ATTRIBUTE    ns3::LogDistancePropagationLossModel::ReferenceLoss
+             défaut=46.6777 (déclaré dans ns3::LogDistancePropagationLossModel)
+  SUPPORTED  STEP 1  TYPE_ID      ns3::RangePropagationLossModel
+             enregistré : ns3::RangePropagationLossModel
+  SUPPORTED  STEP 1  ATTRIBUTE    ns3::RangePropagationLossModel::MaxRange
+             défaut=250 (déclaré dans ns3::RangePropagationLossModel)
+  SUPPORTED  STEP 1  TYPE_ID      ns3::ConstantSpeedPropagationDelayModel
+             enregistré : ns3::ConstantSpeedPropagationDelayModel
+  SUPPORTED  STEP 1  TYPE_ID      ns3::RandomWaypointMobilityModel
+             enregistré : ns3::RandomWaypointMobilityModel
+  SUPPORTED  STEP 1  ATTRIBUTE    ns3::RandomWaypointMobilityModel::Speed
+             défaut=ns3::UniformRandomVariable[Min=0.3|Max=0.7] (déclaré dans ns3::RandomWaypointMobilityModel)
+  SUPPORTED  STEP 1  ATTRIBUTE    ns3::RandomWaypointMobilityModel::Pause
+             défaut=ns3::ConstantRandomVariable[Constant=2.0] (déclaré dans ns3::RandomWaypointMobilityModel)
+  SUPPORTED  STEP 1  ATTRIBUTE    ns3::RandomWaypointMobilityModel::PositionAllocator
+             défaut=0 (déclaré dans ns3::RandomWaypointMobilityModel)
+  SUPPORTED  STEP 1  TYPE_ID      ns3::RandomRectanglePositionAllocator
+             enregistré : ns3::RandomRectanglePositionAllocator
+  SUPPORTED  STEP 1  ATTRIBUTE    ns3::RandomRectanglePositionAllocator::X
+             défaut=ns3::UniformRandomVariable[Min=0.0|Max=1.0] (déclaré dans ns3::RandomRectanglePositionAllocator)
+  SUPPORTED  STEP 1  ATTRIBUTE    ns3::RandomRectanglePositionAllocator::Y
+             défaut=ns3::UniformRandomVariable[Min=0.0|Max=1.0] (déclaré dans ns3::RandomRectanglePositionAllocator)
+  SUPPORTED  STEP 1  TYPE_ID      ns3::UniformRandomVariable
+             enregistré : ns3::UniformRandomVariable
+  SUPPORTED  STEP 1  TYPE_ID      ns3::OnOffApplication
+             enregistré : ns3::OnOffApplication
+  SUPPORTED  STEP 1  ATTRIBUTE    ns3::OnOffApplication::DataRate
+             défaut=500000bps (déclaré dans ns3::OnOffApplication)
+  SUPPORTED  STEP 1  ATTRIBUTE    ns3::OnOffApplication::PacketSize
+             défaut=512 (déclaré dans ns3::OnOffApplication)
+  SUPPORTED  STEP 1  ATTRIBUTE    ns3::OnOffApplication::OnTime
+             défaut=ns3::ConstantRandomVariable[Constant=1.0] (déclaré dans ns3::OnOffApplication)
+  SUPPORTED  STEP 1  ATTRIBUTE    ns3::OnOffApplication::OffTime
+             défaut=ns3::ConstantRandomVariable[Constant=1.0] (déclaré dans ns3::OnOffApplication)
+  SUPPORTED  STEP 1  ATTRIBUTE    ns3::OnOffApplication::Remote
+             défaut=00-00:00 (déclaré dans ns3::SourceApplication)
+  SUPPORTED  STEP 2  ATTRIBUTE    ns3::OnOffApplication::EnableSeqTsSizeHeader
+             défaut=false (déclaré dans ns3::OnOffApplication)
+  SUPPORTED  STEP 1  TYPE_ID      ns3::PacketSink
+             enregistré : ns3::PacketSink
+  SUPPORTED  STEP 1  ATTRIBUTE    ns3::PacketSink::Local
+             défaut=00-00:00 (déclaré dans ns3::SinkApplication)
+  SUPPORTED  STEP 2  ATTRIBUTE    ns3::PacketSink::EnableSeqTsSizeHeader
+             défaut=false (déclaré dans ns3::PacketSink)
+  SUPPORTED  STEP 2  TRACE_SOURCE ns3::OnOffApplication::Tx
+             signature=ns3::Packet::TracedCallback (déclarée dans ns3::SourceApplication)
+  SUPPORTED  STEP 2  TRACE_SOURCE ns3::OnOffApplication::TxWithSeqTsSize
+             signature=ns3::PacketSink::SeqTsSizeCallback (déclarée dans ns3::OnOffApplication)
+  SUPPORTED  STEP 2  TRACE_SOURCE ns3::PacketSink::Rx
+             signature=ns3::Packet::AddressTracedCallback (déclarée dans ns3::SinkApplication)
+  SUPPORTED  STEP 2  TRACE_SOURCE ns3::PacketSink::RxWithSeqTsSize
+             signature=ns3::PacketSink::SeqTsSizeCallback (déclarée dans ns3::PacketSink)
+  SUPPORTED  STEP 2  TRACE_SOURCE ns3::Ipv4L3Protocol::Tx
+             signature=ns3::Ipv4L3Protocol::TxRxTracedCallback (déclarée dans ns3::Ipv4L3Protocol)
+  SUPPORTED  STEP 2  TRACE_SOURCE ns3::Ipv4L3Protocol::Drop
+             signature=ns3::Ipv4L3Protocol::DropTracedCallback (déclarée dans ns3::Ipv4L3Protocol)
+  SUPPORTED  STEP 2  TYPE_ID      ns3::FlowMonitor
+             enregistré : ns3::FlowMonitor
+  SUPPORTED  STEP 3  TYPE_ID      ns3::energy::BasicEnergySource
+             enregistré : ns3::energy::BasicEnergySource
+  SUPPORTED  STEP 3  ATTRIBUTE    ns3::energy::BasicEnergySource::BasicEnergySourceInitialEnergyJ
+             défaut=10 (déclaré dans ns3::energy::BasicEnergySource)
+  SUPPORTED  STEP 3  ATTRIBUTE    ns3::energy::BasicEnergySource::BasicEnergySupplyVoltageV
+             défaut=3 (déclaré dans ns3::energy::BasicEnergySource)
+  SUPPORTED  STEP 3  TRACE_SOURCE ns3::energy::BasicEnergySource::RemainingEnergy
+             signature=ns3::TracedValueCallback::Double (déclarée dans ns3::energy::BasicEnergySource)
+  SUPPORTED  STEP 3  TYPE_ID      ns3::WifiRadioEnergyModel
+             enregistré : ns3::WifiRadioEnergyModel
+  SUPPORTED  STEP 3  ATTRIBUTE    ns3::WifiRadioEnergyModel::TxCurrentA
+             défaut=0.38 (déclaré dans ns3::WifiRadioEnergyModel)
+  SUPPORTED  STEP 3  ATTRIBUTE    ns3::WifiRadioEnergyModel::RxCurrentA
+             défaut=0.313 (déclaré dans ns3::WifiRadioEnergyModel)
+  SUPPORTED  STEP 3  ATTRIBUTE    ns3::WifiRadioEnergyModel::IdleCurrentA
+             défaut=0.273 (déclaré dans ns3::WifiRadioEnergyModel)
+  SUPPORTED  STEP 3  ATTRIBUTE    ns3::WifiRadioEnergyModel::CcaBusyCurrentA
+             défaut=0.273 (déclaré dans ns3::WifiRadioEnergyModel)
+  SUPPORTED  STEP 3  ATTRIBUTE    ns3::WifiRadioEnergyModel::SwitchingCurrentA
+             défaut=0.273 (déclaré dans ns3::WifiRadioEnergyModel)
+  SUPPORTED  STEP 3  ATTRIBUTE    ns3::WifiRadioEnergyModel::SleepCurrentA
+             défaut=0.033 (déclaré dans ns3::WifiRadioEnergyModel)
+  SUPPORTED  STEP 3  TRACE_SOURCE ns3::WifiRadioEnergyModel::TotalEnergyConsumption
+             signature=ns3::TracedValueCallback::Double (déclarée dans ns3::WifiRadioEnergyModel)
+  SUPPORTED  STEP 3  TRACE_SOURCE ns3::WifiPhyStateHelper::State
+             signature=ns3::WifiPhyStateHelper::StateTracedCallback (déclarée dans ns3::WifiPhyStateHelper)
+  violations    : 0
+[rng]  MRG32k3a, seed=12345 run=1
+  stream 0 : 0.24199333864604461 0.73061700024836151 0.59549820955461541
+  stream 1 : 0.65265255788148668 0.81078268998367709 0.36026151546612273
+VERDICT : PASS
