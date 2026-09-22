@@ -208,7 +208,7 @@ class RngReproducibilityTestCase : public TestCase
 {
   public:
     RngReproducibilityTestCase()
-        : TestCase("seed/run/stream triple fully determines a random sequence")
+        : TestCase("seed, run and stream fully determine a random sequence")
     {
     }
 
