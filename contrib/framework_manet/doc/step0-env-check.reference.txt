@@ -9,7 +9,7 @@
   compiler      : gcc 13.3.0
   __cplusplus   : 202100
   executable    : /home/user/ns3ref/ns-3-dev-ns-3.48/build/contrib/framework_manet/examples/ns3.48-framework-manet-env-check-default
-[api-contract]  62 exigences
+[api-contract]  74 exigences
   SUPPORTED  STEP 1  TYPE_ID      ns3::aodv::RoutingProtocol
              enregistré : ns3::aodv::RoutingProtocol
   SUPPORTED  STEP 1  ATTRIBUTE    ns3::aodv::RoutingProtocol::EnableHello
@@ -94,6 +94,30 @@
              défaut=00-00:00 (déclaré dans ns3::SinkApplication)
   SUPPORTED  STEP 2  ATTRIBUTE    ns3::PacketSink::EnableSeqTsSizeHeader
              défaut=false (déclaré dans ns3::PacketSink)
+  SUPPORTED  STEP 1a ATTRIBUTE    ns3::YansWifiPhy::PreambleDetectionModel
+             défaut=0 (déclaré dans ns3::WifiPhy)
+  SUPPORTED  STEP 1a TYPE_ID      ns3::ThresholdPreambleDetectionModel
+             enregistré : ns3::ThresholdPreambleDetectionModel
+  SUPPORTED  STEP 1a ATTRIBUTE    ns3::ThresholdPreambleDetectionModel::MinimumRssi
+             défaut=-82 (déclaré dans ns3::ThresholdPreambleDetectionModel)
+  SUPPORTED  STEP 1a ATTRIBUTE    ns3::ThresholdPreambleDetectionModel::Threshold
+             défaut=4 (déclaré dans ns3::ThresholdPreambleDetectionModel)
+  SUPPORTED  STEP 1a TRACE_SOURCE ns3::WifiPhy::MonitorSnifferRx
+             signature=ns3::WifiPhy::MonitorSnifferRxTracedCallback (déclarée dans ns3::WifiPhy)
+  SUPPORTED  STEP 1a TYPE_ID      ns3::PacketSocketClient
+             enregistré : ns3::PacketSocketClient
+  SUPPORTED  STEP 1a ATTRIBUTE    ns3::PacketSocketClient::MaxPackets
+             défaut=100 (déclaré dans ns3::PacketSocketClient)
+  SUPPORTED  STEP 1a ATTRIBUTE    ns3::PacketSocketClient::Interval
+             défaut=+1e+09ns (déclaré dans ns3::PacketSocketClient)
+  SUPPORTED  STEP 1a ATTRIBUTE    ns3::PacketSocketClient::PacketSize
+             défaut=1024 (déclaré dans ns3::PacketSocketClient)
+  SUPPORTED  STEP 1a TRACE_SOURCE ns3::PacketSocketClient::Tx
+             signature=ns3::Packet::AddressTracedCallback (déclarée dans ns3::PacketSocketClient)
+  SUPPORTED  STEP 1a TYPE_ID      ns3::PacketSocketServer
+             enregistré : ns3::PacketSocketServer
+  SUPPORTED  STEP 1a TRACE_SOURCE ns3::PacketSocketServer::Rx
+             signature=ns3::Packet::AddressTracedCallback (déclarée dans ns3::PacketSocketServer)
   SUPPORTED  STEP 2  TRACE_SOURCE ns3::OnOffApplication::Tx
              signature=ns3::Packet::TracedCallback (déclarée dans ns3::SourceApplication)
   SUPPORTED  STEP 2  TRACE_SOURCE ns3::OnOffApplication::TxWithSeqTsSize

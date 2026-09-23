@@ -1,0 +1,24 @@
+=== framework_manet :: STEP 1a :: link calibration ===
+[config] profile=range maxRange=250m txPower=16dBm data=DsssRate11Mbps control=DsssRate11Mbps nonUnicast=default preambleDetection=on(minRssi=-82dBm,threshold=4dB)
+[config] seed=12345 run=1 frames=1000 intervalMs=50 distances=80 (5..400 m, pas 5 m)
+[radio.effective]
+  standard           : 802.11b
+  frequency_MHz      : 2412
+  channelWidth_MHz   : 22
+  TxPowerStart_dBm   : 16
+  TxPowerEnd_dBm     : 16
+  RxSensitivity_dBm  : -101
+  CcaEdThreshold_dBm : -62
+  RxNoiseFigure_dB   : <non lisible>  (attribut en écriture seule ; bruit effectif : meanRxNoise_dBm)
+  preambleDetection  : ns3::ThresholdPreambleDetectionModel (Threshold=4, MinimumRssi=-82)
+  stationManager     : ns3::ConstantRateWifiManager
+  DataMode           : DsssRate11Mbps
+  ControlMode        : DsssRate11Mbps
+  NonUnicastMode     : Invalid-WifiMode  (Invalid-WifiMode = non fixé ; débit réel mesuré par la calibration)
+  lossModel          : ns3::RangePropagationLossModel (MaxRange=250)
+[check] max |signal observé − prédit| = 1.776356839e-15 dB  OK
+[summary] seuils : fiable si prr >= 0.9, mort si prr <= 0.1 ; degré moyen théorique pour N=20, zone 500 m (hypothèse uniforme, voir D-15)
+  broadcast  dReliable_m=250  dDead_m=255  degréMoyen(dReliable)=9.182981771  débitObservé=DsssRate1Mbps
+  unicast    dReliable_m=250  dDead_m=255  degréMoyen(dReliable)=9.182981771  débitObservé=DsssRate11Mbps
+[output] resulls_framwork/link_calibration_range-r250_pd-on-82_nu-default.csv (160 lignes)
+VERDICT : PASS (0 violation(s) d'invariant)

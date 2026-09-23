@@ -350,6 +350,43 @@ GetBaselineApiRequirements()
          "STEP 2",
          "horodatage applicatif (délai, jitter)"},
 
+        // ----------------------------------------------------------- STEP 1a
+        // Détecteur de préambule (D-05) : configuré explicitement par
+        // RadioHelper et relu sur le PHY installé.
+        {K::ATTRIBUTE,
+         "ns3::YansWifiPhy",
+         "PreambleDetectionModel",
+         "STEP 1a",
+         "relecture du détecteur de préambule effectif"},
+        {K::TYPE_ID,
+         "ns3::ThresholdPreambleDetectionModel",
+         "",
+         "STEP 1a",
+         "détecteur de préambule par défaut de WifiPhyHelper (F-01)"},
+        {K::ATTRIBUTE,
+         "ns3::ThresholdPreambleDetectionModel",
+         "MinimumRssi",
+         "STEP 1a",
+         "seuil de puissance du détecteur (D-05)"},
+        {K::ATTRIBUTE,
+         "ns3::ThresholdPreambleDetectionModel",
+         "Threshold",
+         "STEP 1a",
+         "seuil de SNR du détecteur (D-05)"},
+        {K::TRACE_SOURCE,
+         "ns3::WifiPhy",
+         "MonitorSnifferRx",
+         "STEP 1a",
+         "signal observé à la réception (contrôle croisé du bilan de liaison)"},
+        // Sonde de liaison de niveau 2 (sans IP, ARP ni AODV).
+        {K::TYPE_ID, "ns3::PacketSocketClient", "", "STEP 1a", "émetteur de la sonde"},
+        {K::ATTRIBUTE, "ns3::PacketSocketClient", "MaxPackets", "STEP 1a", "trames par point"},
+        {K::ATTRIBUTE, "ns3::PacketSocketClient", "Interval", "STEP 1a", "intervalle entre trames"},
+        {K::ATTRIBUTE, "ns3::PacketSocketClient", "PacketSize", "STEP 1a", "charge utile"},
+        {K::TRACE_SOURCE, "ns3::PacketSocketClient", "Tx", "STEP 1a", "trames offertes"},
+        {K::TYPE_ID, "ns3::PacketSocketServer", "", "STEP 1a", "récepteur de la sonde"},
+        {K::TRACE_SOURCE, "ns3::PacketSocketServer", "Rx", "STEP 1a", "trames reçues"},
+
         // ------------------------------------------------------------ STEP 2
         {K::TRACE_SOURCE, "ns3::OnOffApplication", "Tx", "STEP 2", "appTxPackets, appTxBytes"},
         {K::TRACE_SOURCE,

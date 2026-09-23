@@ -2,7 +2,8 @@
 #
 # framework_manet — module contrib ns-3.48 (baseline AODV instrumentée).
 #
-# STEP 0 : structure du module et validation de l'environnement.
+# STEP 0  : structure du module et validation de l'environnement.
+# STEP 1a : helper radio commun + sonde de liaison + calibration statique.
 #
 # Le module est découvert automatiquement par ns-3 (tout sous-dossier de
 # contrib/ contenant un CMakeLists.txt). LIBNAME doit être identique au nom
@@ -24,9 +25,15 @@ add_compile_definitions(FMANET_NS3_VERSION="${NS3_VER}")
 build_lib(
   LIBNAME framework_manet
   SOURCE_FILES
+    helper/framework-manet-link-probe.cc
+    helper/framework-manet-radio-helper.cc
     model/framework-manet-api-contract.cc
+    model/framework-manet-statistics.cc
   HEADER_FILES
+    helper/framework-manet-link-probe.h
+    helper/framework-manet-radio-helper.h
     model/framework-manet-api-contract.h
+    model/framework-manet-statistics.h
   LIBRARIES_TO_LINK
     ${libaodv}
     ${libnetanim}
@@ -40,5 +47,6 @@ build_lib(
     ${libnetwork}
     ${libcore}
   TEST_SOURCES
+    test/framework-manet-radio-test-suite.cc
     test/framework-manet-test-suite.cc
 )

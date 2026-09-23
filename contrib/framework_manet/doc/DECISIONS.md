@@ -14,6 +14,8 @@ Nature des affirmations :
 - **[CALCUL]** : arithmétique exacte à partir de faits vérifiés ;
 - **[ESTIMATION]** : inférence qui repose sur des hypothèses explicites, à
   confirmer par une mesure ;
+- **[MESURÉ]** : observé en simulation par un programme du module, avec la
+  commande et la sortie de référence citées (`doc/step1a-reference/`) ;
 - **[AVIS]** : recommandation d'ingénierie.
 
 Sources consultées : archive GitLab du tag `ns-3.48`
@@ -25,48 +27,65 @@ Sources consultées : archive GitLab du tag `ns-3.48`
 
 | ID | Constat | Source | Nature |
 |----|---------|--------|--------|
-| F-01 | `WifiPhyHelper` installe par défaut `ns3::ThresholdPreambleDetectionModel`, avec `MinimumRssi = -82 dBm` et `Threshold = 4 dB`. Une trame reçue sous -82 dBm n'est pas détectée, quel que soit son débit. Le modèle s'applique aussi au DSSS (`PhyEntity`, sans surcharge dans `DsssPhy`). | `src/wifi/helper/wifi-helper.cc:179`, `src/wifi/model/threshold-preamble-detection-model.cc`, `src/wifi/model/phy-entity.cc:1087` | [FAIT] |
+| F-01 | `WifiPhyHelper` installe par défaut `ns3::ThresholdPreambleDetectionModel`, avec `MinimumRssi = -82 dBm` et `Threshold = 4 dB`. Une trame reçue sous -82 dBm n'est pas détectée, quel que soit son débit. Le modèle s'applique aussi au DSSS (`PhyEntity`, sans surcharge dans `DsssPhy`). | `src/wifi/helper/wifi-helper.cc:179`, `src/wifi/model/threshold-preamble-detection-model.cc`, `src/wifi/model/phy-entity.cc:1087` | [FAIT] ; [MESURÉ] STEP 1a : taux de réception de 1 à 85 m, 0 dès 90 m, en broadcast comme en unicast |
 | F-02 | Défauts PHY : `TxPowerStart = TxPowerEnd = 16.0206 dBm`, `RxSensitivity = -101 dBm`, `CcaEdThreshold = -62 dBm`, `RxNoiseFigure = 7 dB`, `TxGain = RxGain = 0 dB`. | `src/wifi/model/wifi-phy.cc` | [FAIT] |
 | F-03 | `LogDistancePropagationLossModel` : `ReferenceLoss` vaut 46.6777 dB par défaut (Friis à 1 m, 5,15 GHz), et non 40.05 dB. | `src/propagation/model/propagation-loss-model.cc` | [FAIT] |
 | F-04 | `RangePropagationLossModel` renvoie la puissance émise telle quelle (16 dBm) si d ≤ MaxRange, et -1000 dBm au-delà. Il décrit un disque idéal : aucune perte et aucune erreur à l'intérieur, aucune interférence à l'extérieur. | `propagation-loss-model.cc:907-920` | [FAIT] |
 | F-05 | Le modèle d'erreur DSSS/CCK à 5,5 et 11 Mbit/s dépend de `HAVE_GSL` au moment du configure : intégration numérique exacte avec GSL, approximation « Matlab » sans GSL. Deux machines qui diffèrent sur ce point ne sont pas numériquement équivalentes. | `src/wifi/model/non-ht/dsss-error-rate-model.cc`, `build-support/macros-and-definitions.cmake:896-903` | [FAIT] |
-| F-06 | Si `NonUnicastMode` n'est pas fixé, les trames broadcast utilisent le premier mode de base (sinon le mode par défaut du PHY). En 802.11b, tous les modes DSSS sont créés « mandatory » ; le premier est `DsssRate1Mbps`. | `wifi-remote-station-manager.cc:2094-2106`, `dsss-phy.cc` | [FAIT] ; débit effectif des RREQ/HELLO : [ESTIMATION], à mesurer à STEP 1 |
+| F-06 | Si `NonUnicastMode` n'est pas fixé, les trames broadcast utilisent le premier mode de base (sinon le mode par défaut du PHY). En 802.11b, tous les modes DSSS sont créés « mandatory » ; le premier est `DsssRate1Mbps`. | `wifi-remote-station-manager.cc:2094-2106`, `dsss-phy.cc` | [FAIT] ; [MESURÉ] STEP 1a : broadcasts émis à `DsssRate1Mbps` (test de régression (f)) |
 | F-07 | `MobilityHelper::AssignStreams` ne couvre pas l'allocateur des positions initiales, car ses variables aléatoires sont consommées dès `Install()`. `RandomWaypointMobilityModel::DoAssignStreams` utilise 2 streams (vitesse, pause) plus ceux de son allocateur de waypoints. | `mobility-helper.h:195-212`, `random-waypoint-mobility-model.cc:121-129` | [FAIT] |
 | F-08 | Énergie : `BasicEnergySourceInitialEnergyJ = 10 J`, tension 3,0 V ; `WifiRadioEnergyModel` : Idle et CcaBusy 0,273 A, Tx 0,380 A, Rx 0,313 A, Sleep 0,033 A. À l'épuisement, `WifiRadioEnergyModelHelper` appelle par défaut `WifiPhy::SetOffMode` : la radio s'éteint. | `basic-energy-source.cc`, `wifi-radio-energy-model.cc`, `wifi-radio-energy-model-helper.cc:69-75` | [FAIT] |
 | F-09 | Les classes énergie sont dans `ns3::energy` (`ns3::energy::BasicEnergySource`). `ns3::BasicEnergySource` n'est plus qu'un alias déprécié. | `basic-energy-source.cc:29-30` | [FAIT] |
 | F-10 | AODV ne déclare **aucune** TraceSource. L'overhead de routage doit donc être mesuré hors d'AODV : à la couche IP, sur les paquets UDP du port 654 (`RoutingProtocol::AODV_PORT`). | `src/aodv/model/aodv-routing-protocol.cc`, `.h:55` | [FAIT] |
 | F-11 | Avec `EnableSeqTsSizeHeader = true`, `OnOffApplication` crée des paquets de `PacketSize - taille(en-tête)` octets avant d'ajouter l'en-tête : la charge utile UDP reste de 512 octets. | `onoff-application.cc:253-270` | [FAIT] |
 | F-12 | ns-3.48 : `Remote` et `Tx` sont déclarés dans `ns3::SourceApplication`, `Local` et `Rx` dans `ns3::SinkApplication`, qui sont les parents de `OnOffApplication` et `PacketSink`. | `source-application.cc`, `sink-application.cc` | [FAIT] |
+| F-13 | Les ACK partent au même débit que les données : `DsssRate11Mbps`. ns-3 choisit le plus haut mode de base ≤ débit des données, et tous les modes DSSS sont « de base » (F-06). En 802.11b réel, les ACK partent souvent à 1 ou 2 Mbit/s. | calibration, colonne `observedAckMode` | [MESURÉ] |
+| F-14 | Bruit effectif au récepteur : −93,966 dBm. Cette valeur correspond exactement à k·290 K·**20 MHz** + 7 dB : ns-3 intègre le bruit thermique sur 20 MHz, et non sur les 22 MHz du DSSS (écart 0,4 dB avec l'estimation initiale). | `interference-helper.cc:408-412` ; colonne `meanRxNoise_dBm` | [MESURÉ] + [CALCUL] |
+| F-15 | Une trame unicast est émise au plus 7 fois (`attemptsPerOffered = 7` quand rien n'est reçu), soit 6 retransmissions. | calibration, colonne `attemptsPerOffered` | [MESURÉ] |
+| F-16 | `RxNoiseFigure` est en écriture seule dans ns-3.48 : le lire provoque `NS_FATAL`. La relecture de la configuration effective le signale `<non lisible>`. | `wifi-phy.cc:188` ; bug trouvé et corrigé à STEP 1a | [FAIT] |
 
-### Conséquence de F-01 à F-03 sur le scénario de référence
+### Conséquence sur le scénario de référence — mesurée à STEP 1a
 
 Bilan de liaison du profil principal, sans évanouissement :
 
-    RSSI(d) = 16 − 40.05 − 30·log10(d)   [dBm, d en m, d0 = 1 m]
+    Prx(d) = 16 − 40.05 − 30·log10(d)   [dBm, d en m, d0 = 1 m]
+    bruit  = −93,97 dBm (F-14)
 
-- Seuil de détection du préambule de -82 dBm : **d_max ≈ 85,4 m** [CALCUL].
-- Si ce détecteur était désactivé, `RxSensitivity = -101 dBm` donnerait
-  d_max ≈ 367 m [CALCUL]. La portée utile serait alors fixée par le modèle
-  d'erreur : environ 100 m à 11 Mbit/s et environ 290 m à 1 Mbit/s
-  [ESTIMATION, sans GSL, trames de 512 octets et de contrôle].
-- Degré moyen attendu pour 20 nœuds placés uniformément dans 500 m × 500 m
-  (probabilité de lien corrigée des effets de bord) [CALCUL, hypothèse de
-  distribution uniforme] :
+Calibration statique à deux nœuds [MESURÉ] : 1000 trames par point, pas de
+5 m, seed 12345, run 1 ; broadcast de 52 octets IP (taille d'un RREQ),
+unicast de 540 octets IP (données). « Fiable » = taux de réception ≥ 0,9 à
+toutes les distances inférieures ; « mort » = taux ≤ 0,1. Degré moyen
+[CALCUL] : 20 nœuds uniformes dans 500 m × 500 m, avec correction des effets
+de bord.
 
-| portée r | degré moyen |
-|---------:|------------:|
-| 85 m     | ≈ 1,5 |
-| 100 m    | ≈ 2,0 |
-| 150 m    | ≈ 4,1 |
-| 250 m    | ≈ 9,2 |
+| configuration | broadcast fiable / mort | unicast fiable / mort | degré moyen (fiable) broadcast / unicast |
+|---|---|---|---|
+| A — défauts ns-3 (détecteur −82 dBm, NonUnicastMode non fixé) | 85 / 90 m (1 Mbit/s) | 85 / 90 m | 1,5 / 1,5 |
+| A' — détecteur actif, NonUnicastMode = 11 Mbit/s | 85 / 90 m | 85 / 90 m | 1,5 / 1,5 |
+| B — détecteur désactivé, NonUnicastMode non fixé | 295 / 350 m (1 Mbit/s) | 105 / 120 m | 11,5 / 2,2 |
+| B' — détecteur désactivé, NonUnicastMode = 11 Mbit/s | 105 / 130 m | 105 / 120 m | 2,2 / 2,2 |
+| range 150 m (contrôle) | 150 / 155 m | 150 / 155 m | 4,1 / 4,1 |
+| range 250 m (contrôle) | 250 / 255 m | 250 / 255 m | 9,2 / 9,2 |
 
-Avec un degré moyen de 1,5, un graphe géométrique aléatoire est très loin
-de la connectivité. La plupart des couples source/destination seront
-déconnectés la majeure partie du temps [ESTIMATION]. Le PDR de la baseline
-refléterait alors surtout la topologie, et non le comportement d'AODV.
-La régime stationnaire du RandomWaypoint concentre les nœuds au centre, ce
-qui augmente un peu ce degré, sans changer l'ordre de grandeur [ESTIMATION].
-Voir D-05.
+Lecture :
+
+1. Avec les valeurs radio de la spécification, **aucune option de D-05 ou
+   D-06 ne porte les données au-delà d'environ 105 m** [MESURÉ]. Le degré
+   moyen des liens de données reste donc ≤ 2,2. Pour des disques de rayon r
+   dans le plan, la percolation (apparition d'une composante géante)
+   n'intervient qu'autour d'un degré moyen de 4,5 [FAIT, résultat classique
+   de percolation continue]. Le réseau de référence sera majoritairement
+   partitionné, quelles que soient D-05 et D-06 [ESTIMATION, confiance 0,85 ;
+   à confirmer par la connectivité mesurée à STEP 1b].
+2. L'option B sans NonUnicastMode crée une zone grise d'un facteur 2,8 en
+   portée : RREQ et HELLO à 295 m, données à 105 m [MESURÉ].
+3. Les deux profils de la spécification décrivent des **réseaux
+   différents** : le contrôle `range` à 250 m (degré ≈ 9) n'est pas un
+   contrôle positif du régime `logdistance` (degré ≈ 1,5 à 2,2), mais un
+   autre scénario. Le contrôle à 150 m, avec un degré ≈ 4,1 proche du seuil
+   de percolation, reste le plus proche d'un réseau multi-sauts.
+
+Voir D-05 et D-19.
 
 ---
 
@@ -82,6 +101,8 @@ commit identifie les deux. CMake ignore ce dossier, qui ne contient pas de
 premier script.
 
 ### D-02 — `maxRange` : 250 m (tableau) ou 150 m (contrôle positif) — `À CONFIRMER`
+[MESURÉ] Les deux disques sont nets : 150 → 155 m et 250 → 255 m
+(`doc/step1a-reference/`). Voir aussi D-19, point 3.
 Le tableau des paramètres donne 250 m par défaut ; la section propagation
 fixe le contrôle positif à 150 m. Proposition : conserver 250 m comme valeur
 par défaut de la CLI (tableau), et lancer le contrôle positif avec
@@ -102,40 +123,68 @@ n'est pas utilisé.
 
 ### D-05 — Seuil de détection du préambule (F-01) — `À CONFIRMER` (bloquant pour STEP 1b)
 Sans décision explicite, le scénario de référence hérite d'un seuil conçu
-pour l'OFDM : -82 dBm est la sensibilité CCA exigée pour le débit minimal
-en 802.11a/g. Ce seuil limite toutes les liaisons à environ 85 m.
-Options :
+pour l'OFDM : −82 dBm est la sensibilité exigée pour le débit minimal en
+802.11a/g. Ce seuil limite toutes les liaisons à 85 m [MESURÉ].
+Options, toutes paramétrées dans `RadioConfig` / la CLI :
 
-- **A** — conserver les défauts ns-3.48. Le choix est reproductible et sans
-  intervention, mais le réseau est fortement partitionné (degré ≈ 1,5).
-- **B** — `DisablePreambleDetectionModel()`. La détection est alors fixée par
-  `RxSensitivity` (-101 dBm) et par les modèles d'erreur. La « zone grise »
-  de D-06 réapparaît : broadcasts à 1 Mbit/s portant jusqu'à environ 290 m,
-  données à 11 Mbit/s jusqu'à environ 100 m [ESTIMATION].
-- **C** — conserver le détecteur avec un `MinimumRssi` justifié pour le DSSS
-  (valeur tirée d'une fiche technique de récepteur 802.11b). Le paramètre
-  devient alors physique et documenté.
+- **A** — défauts ns-3.48 (`--preambleDetection=true --pdMinRssi=-82`).
+  Reproductible, sans intervention ; portée 85 m, degré ≈ 1,5.
+- **B** — détecteur désactivé (`--preambleDetection=false`). Détection fixée
+  par `RxSensitivity` (−101 dBm) et par les modèles d'erreur ; données
+  portées à 105 m, degré ≈ 2,2 ; zone grise si D-06 n'est pas fixé.
+- **C** — détecteur conservé avec un `--pdMinRssi` tiré d'une fiche technique
+  de récepteur 802.11b. Le paramètre devient physique et documenté.
 
-Règle proposée : décider **avant** de connaître le PDR, à partir de la seule
-mesure de calibration radio de STEP 1a, et consigner la décision ici.
-Choisir la valeur qui maximise le PDR serait exactement l'ajustement que la
-spécification interdit.
-[AVIS] L'option A ne ment pas, mais elle rend la baseline peu informative
-pour évaluer une attaque : l'effet d'un blackhole est borné par la fraction
-de trafic routable.
+Règle : décider **avant** STEP 1b, sur la seule base de la calibration de
+STEP 1a, et consigner la décision ici. Choisir la valeur qui maximise le PDR
+serait exactement l'ajustement que la spécification interdit.
+[AVIS] B' (B + NonUnicastMode 11 Mbit/s) est l'option la plus propre du
+point de vue radio : pas de seuil OFDM appliqué à du DSSS, pas de zone grise.
+Mais la mesure montre que D-05 seul ne change pas l'ordre de grandeur de la
+connectivité (1,5 → 2,2). La vraie question est D-19.
 
 ### D-06 — Débit des trames non-unicast (`NonUnicastMode`) — `À CONFIRMER`
-D'après F-06, les RREQ, HELLO et RERR partiraient à 1 Mbit/s, alors que les
-données et les RREP partent à 11 Mbit/s. Sous l'option D-05 A, ce point est
-masqué, puisque toutes les liaisons sont limitées à environ 85 m. Sous B ou
-C, AODV apprend des voisins et des routes par des liens incapables de
-porter des données unicast (Lundgren et al., 2002, « communication gray
-zones »).
-[AVIS] Fixer explicitement `NonUnicastMode = DsssRate11Mbps`, en plus de
-`DataMode` et `ControlMode`. C'est la lecture la plus littérale de « débit
-PHY DsssRate11Mbps ». Surtout, cela supprime un facteur confondant qui agit
-précisément sur le chemin RREQ/RREP exploité par un blackhole. Le débit
-effectif sera vérifié à STEP 1a avec la TraceSource `WifiPhy::MonitorSnifferTx`.
+[MESURÉ] Non fixé, les RREQ, HELLO et RERR partent à 1 Mbit/s, et les
+données, RREP et ACK à 11 Mbit/s (F-06, F-13). Sous l'option D-05 A, cela
+n'a aucun effet (A et A' donnent la même portée de 85 m). Sous B, les
+broadcasts portent 2,8 fois plus loin que les données : AODV découvre des
+routes par des liens incapables de porter des données unicast (Lundgren et
+al., 2002, « communication gray zones »).
+[AVIS] Fixer `NonUnicastMode = DsssRate11Mbps`. C'est la lecture la plus
+littérale de « débit PHY DsssRate11Mbps », et cela supprime un facteur
+confondant qui agit précisément sur le chemin RREQ/RREP exploité par un
+blackhole. Asymétrie résiduelle mesurée sous B' : un RREQ de 52 octets reste
+reçu à 41 % à 120 m, contre 2,5 % pour une donnée de 540 octets, un effet de
+taille de trame qui subsiste à débit égal.
+
+### D-19 — Régime de connectivité visé par la baseline — `À CONFIRMER` (bloquant pour STEP 1b)
+Constat [MESURÉ + CALCUL] : avec 16 dBm, n = 3, 40,05 dB et des données à
+11 Mbit/s, la portée des données plafonne à environ 105 m. Avec 20 nœuds
+dans 500 m × 500 m, le réseau reste sous le seuil de percolation, quelle que
+soit la décision D-05. Ce n'est pas un bug : c'est une propriété des
+paramètres de la spécification. C'est aussi une incohérence interne de
+celle-ci, puisque son contrôle `range` à 250 m suppose un réseau connexe.
+
+Deux voies légitimes, à trancher **par un argument de régime et non par le
+PDR** :
+
+1. **Conserver la spécification.** La baseline étudie un MANET clairsemé et
+   partitionné. Scientifiquement défendable, mais l'effet d'une attaque sur
+   les routes y sera faible et noyé dans les pertes topologiques. Il faudra
+   rapporter la connectivité mesurée à côté de chaque PDR.
+2. **Fixer d'abord un régime cible**, par exemple « réseau connexe la plupart
+   du temps, degré moyen de 6 à 10, routes de 2 à 4 sauts », puis modifier
+   **un seul** paramètre, justifié physiquement, pour l'atteindre :
+   `areaSize`, `numNodes`, `txPower` (20 dBm = 100 mW, plafond courant en
+   2,4 GHz), `pathLossExponent` (2,7 à 3,5 selon l'environnement) ou débit
+   de données. La calibration de STEP 1a permet de vérifier le régime obtenu
+   avant toute simulation MANET. Le scénario de la spécification peut rester
+   une variante « clairsemée » documentée.
+
+[AVIS] Voie 2, en conservant la variante clairsemée. Une baseline destinée à
+évaluer des attaques de routage doit placer la plupart des flux sur des
+routes multi-sauts existantes. La décision appartient à l'utilisateur et
+doit être consignée ici avant STEP 1b.
 
 ### D-07 — Plan des streams RNG — `PROPOSÉ` (STEP 1)
 Des blocs fixes permettent qu'une variation du nombre de streams d'un
