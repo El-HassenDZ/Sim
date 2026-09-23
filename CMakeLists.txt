@@ -1,0 +1,22 @@
+build_lib(
+  LIBNAME odr
+  SOURCE_FILES
+    helper/odr-helper.cc
+    model/odr-packet-queue.cc
+    model/odr-packet.cc
+    model/odr-request-cache.cc
+    model/odr-routing-protocol.cc
+    model/odr-routing-table.cc
+  HEADER_FILES
+    helper/odr-helper.h
+    model/odr-packet-queue.h
+    model/odr-packet.h
+    model/odr-request-cache.h
+    model/odr-routing-protocol.h
+    model/odr-routing-table.h
+  LIBRARIES_TO_LINK
+    ${libinternet}
+    ${libwifi}
+  TEST_SOURCES
+    test/odr-test-suite.cc
+)
