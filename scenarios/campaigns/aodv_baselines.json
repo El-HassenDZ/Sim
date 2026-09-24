@@ -1,0 +1,5 @@
+[
+  {"label": "aodv-ns3-default", "protocol": "aodv", "args": ["--aodv-hello"]},
+  {"label": "aodv-no-hello", "protocol": "aodv", "args": []},
+  {"label": "odr", "protocol": "odr", "args": []}
+]

@@ -5,6 +5,7 @@
 #include "ns3/mobility-helper.h"
 #include "ns3/mobility-model.h"
 #include "ns3/odr-cbr-source.h"
+#include "ns3/odr-control-traffic-monitor.h"
 #include "ns3/odr-helper.h"
 #include "ns3/odr-packet-queue.h"
 #include "ns3/odr-packet.h"
@@ -585,6 +586,9 @@ class OdrChainDiscoveryTestCase : public TestCase
             BuildNetwork({{0, 0, 0}, {100, 0, 0}, {200, 0, 0}, {300, 0, 0}, {400, 0, 0}}, nodes);
         UdpSink sink(nodes.Get(4));
         StartUdpFlow(nodes.Get(0), ifaces.GetAddress(4), Seconds(1), MilliSeconds(250), 20);
+        Ptr<ControlTrafficMonitor> monitor = CreateObject<ControlTrafficMonitor>();
+        monitor->AddPort(RoutingProtocol::ODR_PORT);
+        monitor->Install(nodes);
 
         Simulator::Schedule(Seconds(6), [this, &nodes, &ifaces]() {
             RoutingTableEntry route;
@@ -607,6 +611,18 @@ class OdrChainDiscoveryTestCase : public TestCase
                               1U,
                               "Destination must reply once");
         NS_TEST_EXPECT_MSG_EQ(StatsOf(nodes.Get(3)).rrepForwarded, 1U, "RREP not relayed");
+
+        // The protocol-agnostic monitor must see exactly the transmissions ODR
+        // counts itself, each 28 bytes larger for the IPv4 and UDP headers.
+        uint64_t odrPackets = 0;
+        uint64_t odrBytes = 0;
+        for (uint32_t k = 0; k < nodes.GetN(); ++k)
+        {
+            odrPackets += StatsOf(nodes.Get(k)).controlTxPackets;
+            odrBytes += StatsOf(nodes.Get(k)).controlTxBytes;
+        }
+        NS_TEST_EXPECT_MSG_EQ(monitor->GetTotalPackets(), odrPackets, "Monitor missed packets");
+        NS_TEST_EXPECT_MSG_EQ(monitor->GetTotalBytes(), odrBytes + 28 * odrPackets, "Byte count");
         Simulator::Destroy();
     }
 };

@@ -3,6 +3,7 @@ build_lib(
   SOURCE_FILES
     helper/odr-helper.cc
     model/odr-cbr-source.cc
+    model/odr-control-traffic-monitor.cc
     model/odr-packet-queue.cc
     model/odr-packet.cc
     model/odr-request-cache.cc
@@ -11,6 +12,7 @@ build_lib(
   HEADER_FILES
     helper/odr-helper.h
     model/odr-cbr-source.h
+    model/odr-control-traffic-monitor.h
     model/odr-packet-queue.h
     model/odr-packet.h
     model/odr-request-cache.h

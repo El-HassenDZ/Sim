@@ -37,6 +37,10 @@ Outputs (in --outdir, prefixed by a tag built from the main parameters)
 * <tag>.flowmon.xml: ns-3 FlowMonitor statistics for every IPv4 flow,
   routing control flows included; data flows are identified by the ports
   listed in the metadata.
+* <tag>.control.csv: per-node routing control transmissions (packets and
+  IPv4 bytes), counted by odr::ControlTrafficMonitor on the protocol's UDP
+  port. FlowMonitor cannot provide this figure: it ignores broadcasts, i.e.
+  most of the control traffic of every MANET protocol.
 * <tag>.odr.csv: per-node ODR counters (ODR runs only), written by
   OdrHelper::WriteStatistics.
 * <tag>.meta.json: parameters, network configuration fingerprint (identical
@@ -79,8 +83,8 @@ except ModuleNotFoundError:
 
 PROTOCOLS = ("odr", "aodv", "olsr", "dsdv")
 
-# UDP ports of routing control traffic. FlowMonitor classifies these packets
-# as ordinary flows; the analysis needs the list to separate them from data.
+# UDP ports of routing control traffic, counted by ControlTrafficMonitor and
+# needed by the analysis to separate FlowMonitor's control flows from data.
 CONTROL_PORTS = {"odr": 5654, "aodv": 654, "olsr": 698, "dsdv": 269}
 
 DATA_BASE_PORT = 10000
@@ -171,8 +175,18 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         help="Override an ns-3 attribute default, e.g. "
         "ns3::odr::RoutingProtocol::ActiveRouteTimeout=5s (repeatable)",
     )
+    parser.add_argument(
+        "--label",
+        default="",
+        help="Human-readable name of the variant, stored in the metadata for the analysis",
+    )
     parser.add_argument("--outdir", type=Path, default=Path("results"))
     parser.add_argument("--mobility-trace", action="store_true")
+    parser.add_argument(
+        "--skip-existing",
+        action="store_true",
+        help="Do nothing if this replication's metadata already exists (campaign resume)",
+    )
     parser.add_argument("--pcap", action="store_true")
     args = parser.parse_args(argv)
 
@@ -209,11 +223,13 @@ _NON_NETWORK_PARAMETERS = (
     "protocol",
     "aodv_hello",
     "set",
+    "label",
     "seed",
     "run",
     "outdir",
     "mobility_trace",
     "pcap",
+    "skip_existing",
 )
 
 
@@ -565,7 +581,15 @@ def run_scenario(args: argparse.Namespace) -> Path:
     interfaces = addresses.Assign(devices)
     flows = install_traffic(nodes, interfaces, args)
 
-    outputs = {"flowmon": f"{tag}.flowmon.xml", "meta": f"{tag}.meta.json"}
+    control_monitor = ns.CreateObject[ns.odr.ControlTrafficMonitor]()
+    control_monitor.AddPort(CONTROL_PORTS[args.protocol])
+    control_monitor.Install(nodes)
+
+    outputs = {
+        "flowmon": f"{tag}.flowmon.xml",
+        "control": f"{tag}.control.csv",
+        "meta": f"{tag}.meta.json",
+    }
     if args.mobility_trace:
         ascii_helper = ns.AsciiTraceHelper()
         outputs["mobility"] = f"{tag}.mobility.txt"
@@ -589,6 +613,7 @@ def run_scenario(args: argparse.Namespace) -> Path:
     # the received nor the lost count.
     monitor.CheckForLostPackets()
     monitor.SerializeToXmlFile(str(args.outdir / outputs["flowmon"]), False, False)
+    control_monitor.WriteCsv(str(args.outdir / outputs["control"]))
     for spec, source in flows:
         spec.attempted = int(source.GetAttempted())
         spec.accepted = int(source.GetAccepted())
@@ -627,6 +652,10 @@ def main(argv: Sequence[str]) -> int:
         The process exit status.
     """
     args = parse_args(argv)
+    existing = args.outdir / f"{scenario_tag(args)}.meta.json"
+    if args.skip_existing and existing.exists():
+        print(existing)
+        return 0
     meta_path = run_scenario(args)
     print(meta_path)
     return 0

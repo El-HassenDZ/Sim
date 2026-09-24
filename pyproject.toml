@@ -1,0 +1,7 @@
+# Python style for scenarios/ and analysis/, aligned with ns-3's own settings.
+[tool.black]
+line-length = 100
+
+[tool.isort]
+profile = "black"
+line_length = 100
