@@ -131,7 +131,13 @@ counts, the ODR counters (ODR runs) and a JSON metadata file:
 Defaults: 50 nodes in 1000 m × 1000 m, steady-state random waypoint at
 1–10 m/s without pause, 802.11b at 11 Mb/s, unit-disk range of 250 m,
 10 CBR flows of 4 × 512-byte packets per second, 200 s runs with traffic
-between 10 s and 190 s, AODV HELLO disabled.
+between 10 s and 190 s, AODV HELLO disabled unless `--aodv-hello` or an
+AODV profile is given.
+
+`--aodv-profile tuned` runs ns-3's AODV with the configuration selected and
+confirmed in [docs/aodv-performance.md](docs/aodv-performance.md) for this
+scenario (HELLO on, destination-only replies, 6 s active route timeout);
+`--aodv-profile ns3-default` runs it with ns-3's own defaults.
 
 For a given seed and run, every protocol sees the same trajectories and the
 same flows (fixed random stream blocks per subsystem; traffic matrix drawn
@@ -183,6 +189,15 @@ A variant is a label, a protocol and extra scenario arguments (typically
 the same command resumes an interrupted campaign. The analysis uses only the
 Python standard library and writes `runs.csv`, `summary.csv` and
 `paired.csv`.
+
+## Results
+
+[docs/aodv-performance.md](docs/aodv-performance.md) reports the AODV
+configuration study on the default scenario (50 mobile nodes at 1–10 m/s,
+2.38 hops on average): screening of ns-3 AODV attributes, confirmation on
+independent replications, and comparison with ODR and with the
+connectivity ceiling. `analysis/topology_stats.py` provides the
+protocol-independent part of that report.
 
 ## Tests
 

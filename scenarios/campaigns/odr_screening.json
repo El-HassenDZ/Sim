@@ -1,0 +1,6 @@
+[
+  {"label": "odr-art6", "protocol": "odr", "args": ["--set", "ns3::odr::RoutingProtocol::ActiveRouteTimeout=6s"]},
+  {"label": "odr-destonly", "protocol": "odr", "args": ["--set", "ns3::odr::RoutingProtocol::DestinationOnly=true"]},
+  {"label": "odr-ttl3", "protocol": "odr", "args": ["--set", "ns3::odr::RoutingProtocol::TtlStart=3"]},
+  {"label": "odr-retries4", "protocol": "odr", "args": ["--set", "ns3::odr::RoutingProtocol::RreqRetries=4"]}
+]

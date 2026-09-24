@@ -1,15 +1,5 @@
 [
-  {"label": "aodv-ns3-default", "protocol": "aodv", "args": ["--aodv-hello"]},
-  {
-    "label": "aodv-tuned",
-    "protocol": "aodv",
-    "args": [
-      "--aodv-hello",
-      "--set", "ns3::aodv::RoutingProtocol::DestinationOnly=true",
-      "--set", "ns3::aodv::RoutingProtocol::ActiveRouteTimeout=6s",
-      "--set", "ns3::aodv::RoutingProtocol::MyRouteTimeout=12s",
-      "--set", "ns3::aodv::RoutingProtocol::DeletePeriod=30s"
-    ]
-  },
+  {"label": "aodv-ns3-default", "protocol": "aodv", "args": ["--aodv-profile", "ns3-default"]},
+  {"label": "aodv-tuned", "protocol": "aodv", "args": ["--aodv-profile", "tuned"]},
   {"label": "odr", "protocol": "odr", "args": []}
 ]

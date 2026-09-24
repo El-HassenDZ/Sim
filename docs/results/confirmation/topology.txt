@@ -1,0 +1,11 @@
+runs: 20
+source-destination connectivity: 0.993 ± 0.006
+shortest path length (hops):     2.38 ± 0.15
+hop count distribution over connected samples:
+   1 hop(s):  24.1%
+   2 hop(s):  33.6%
+   3 hop(s):  26.2%
+   4 hop(s):  12.6%
+   5 hop(s):   3.1%
+   6 hop(s):   0.4%
+   7 hop(s):   0.0%

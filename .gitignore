@@ -13,4 +13,7 @@ __pycache__/
 *.csv
 
 # Default output directory of scenarios/manet_scenario.py
-results/
+/results/
+
+# Campaign summaries kept under version control
+!docs/results/**/*.csv

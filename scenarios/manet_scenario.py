@@ -98,6 +98,29 @@ STREAM_WIFI = 1 * STREAM_BLOCK
 STREAM_INTERNET = 2 * STREAM_BLOCK
 STREAM_ROUTING = 3 * STREAM_BLOCK
 
+_AODV = "ns3::aodv::RoutingProtocol::"
+
+# Named configurations of ns-3's AODV, expanded into --aodv-hello and --set.
+# "tuned" is the configuration selected by the screening campaign in
+# docs/aodv-performance.md and confirmed on independent replications for the
+# default scenario (50 nodes, 1 km^2, 1-10 m/s): destination-only replies
+# remove stale cached answers, and the longer route lifetime cuts expirations
+# of routes that are still valid. MyRouteTimeout and DeletePeriod are
+# separate attributes in ns-3's AODV, so they are scaled with
+# ActiveRouteTimeout as RFC 3561 derives them.
+AODV_PROFILES = {
+    "ns3-default": {"hello": True, "set": []},
+    "tuned": {
+        "hello": True,
+        "set": [
+            f"{_AODV}DestinationOnly=true",
+            f"{_AODV}ActiveRouteTimeout=6s",
+            f"{_AODV}MyRouteTimeout=12s",
+            f"{_AODV}DeletePeriod=30s",
+        ],
+    },
+}
+
 
 @dataclass
 class FlowSpec:
@@ -168,6 +191,11 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         "comparison with ODR, which has none",
     )
     parser.add_argument(
+        "--aodv-profile",
+        choices=sorted(AODV_PROFILES),
+        help="Named AODV configuration; expands to --aodv-hello and --set overrides",
+    )
+    parser.add_argument(
         "--set",
         action="append",
         default=[],
@@ -212,6 +240,15 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     for override in args.set:
         if "=" not in override:
             parser.error(f"--set expects NAME=VALUE, got {override!r}")
+    if args.aodv_profile:
+        if args.protocol != "aodv":
+            parser.error("--aodv-profile applies to --protocol aodv only")
+        # Expanding here, rather than applying the profile separately, makes a
+        # profile run indistinguishable from the explicit command line: same
+        # protocol variant, same tag, and --skip-existing recognizes it.
+        profile = AODV_PROFILES[args.aodv_profile]
+        args.aodv_hello = args.aodv_hello or profile["hello"]
+        args.set = profile["set"] + args.set
     return args
 
 
@@ -230,6 +267,7 @@ _NON_NETWORK_PARAMETERS = (
     "mobility_trace",
     "pcap",
     "skip_existing",
+    "aodv_profile",
 )
 
 
