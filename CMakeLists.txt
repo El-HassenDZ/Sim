@@ -2,6 +2,7 @@ build_lib(
   LIBNAME odr
   SOURCE_FILES
     helper/odr-helper.cc
+    model/odr-cbr-source.cc
     model/odr-packet-queue.cc
     model/odr-packet.cc
     model/odr-request-cache.cc
@@ -9,6 +10,7 @@ build_lib(
     model/odr-routing-table.cc
   HEADER_FILES
     helper/odr-helper.h
+    model/odr-cbr-source.h
     model/odr-packet-queue.h
     model/odr-packet.h
     model/odr-request-cache.h

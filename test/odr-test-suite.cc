@@ -4,6 +4,7 @@
 #include "ns3/ipv4-address-helper.h"
 #include "ns3/mobility-helper.h"
 #include "ns3/mobility-model.h"
+#include "ns3/odr-cbr-source.h"
 #include "ns3/odr-helper.h"
 #include "ns3/odr-packet-queue.h"
 #include "ns3/odr-packet.h"
@@ -14,6 +15,7 @@
 #include "ns3/string.h"
 #include "ns3/test.h"
 #include "ns3/udp-socket-factory.h"
+#include "ns3/uinteger.h"
 #include "ns3/wifi-helper.h"
 #include "ns3/wifi-mac-helper.h"
 #include "ns3/yans-wifi-helper.h"
@@ -769,6 +771,67 @@ class OdrRerrPropagationTestCase : public TestCase
 
 /**
  * @ingroup odr-tests
+ * CbrSource counts refused packets as offered load. A proactive protocol
+ * without a route makes the socket refuse the packet; OnOffApplication would
+ * silently skip it and FlowMonitor would never see it.
+ */
+class OdrCbrSourceTestCase : public TestCase
+{
+  public:
+    OdrCbrSourceTestCase()
+        : TestCase("CbrSource accounts for packets the socket refuses")
+    {
+    }
+
+  private:
+    /**
+     * @param node sending node
+     * @param remote destination
+     * @return a source emitting every 100 ms from 1 s to 1.95 s, i.e. 10 packets
+     */
+    static Ptr<CbrSource> MakeSource(Ptr<Node> node, Ipv4Address remote)
+    {
+        Ptr<CbrSource> source = CreateObject<CbrSource>();
+        source->SetAttribute("Remote", AddressValue(InetSocketAddress(remote, SINK_PORT)));
+        source->SetAttribute("PacketSize", UintegerValue(64));
+        source->SetAttribute("Interval", TimeValue(MilliSeconds(100)));
+        node->AddApplication(source);
+        source->SetStartTime(Seconds(1));
+        source->SetStopTime(Seconds(1.95));
+        return source;
+    }
+
+    void DoRun() override
+    {
+        NodeContainer nodes;
+        Ipv4InterfaceContainer ifaces = BuildNetwork({{0, 0, 0}, {100, 0, 0}}, nodes);
+        UdpSink sink(nodes.Get(1));
+        Ptr<CbrSource> routed = MakeSource(nodes.Get(0), ifaces.GetAddress(1));
+
+        // Static routing with no interface but loopback: every RouteOutput()
+        // fails, as with a proactive protocol that has no route yet.
+        NodeContainer isolated;
+        isolated.Create(1);
+        InternetStackHelper plainStack;
+        plainStack.Install(isolated);
+        Ptr<CbrSource> unroutable = MakeSource(isolated.Get(0), Ipv4Address("10.9.9.9"));
+
+        Simulator::Stop(Seconds(3));
+        Simulator::Run();
+
+        NS_TEST_EXPECT_MSG_EQ(routed->GetAttempted(), 10U, "Emission schedule");
+        NS_TEST_EXPECT_MSG_EQ(routed->GetAccepted(), 10U, "ODR never refuses: it parks");
+        NS_TEST_EXPECT_MSG_EQ(routed->GetRefused(), 0U, "Unexpected refusal");
+        NS_TEST_EXPECT_MSG_EQ(sink.GetReceived(ifaces.GetAddress(0)), 10U, "Packets lost");
+        NS_TEST_EXPECT_MSG_EQ(unroutable->GetAttempted(), 10U, "Refusals must not stop the source");
+        NS_TEST_EXPECT_MSG_EQ(unroutable->GetAccepted(), 0U, "Packet accepted without a route");
+        NS_TEST_EXPECT_MSG_EQ(unroutable->GetRefused(), 10U, "Refusals not counted");
+        Simulator::Destroy();
+    }
+};
+
+/**
+ * @ingroup odr-tests
  * ODR test suite.
  */
 class OdrTestSuite : public TestSuite
@@ -787,6 +850,7 @@ class OdrTestSuite : public TestSuite
         AddTestCase(new OdrIntermediateReplyTestCase, Duration::QUICK);
         AddTestCase(new OdrLinkBreakRepairTestCase, Duration::QUICK);
         AddTestCase(new OdrRerrPropagationTestCase, Duration::QUICK);
+        AddTestCase(new OdrCbrSourceTestCase, Duration::QUICK);
     }
 };
 

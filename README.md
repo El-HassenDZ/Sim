@@ -117,10 +117,55 @@ Normalized routing load = Σ `control_tx_packets` / delivered data packets
 (from FlowMonitor). The packet balance closes as
 sent = delivered + routing drops + MAC/PHY losses + `data_queued_at_end` + in flight.
 
+## Scenario script
+
+`scenarios/manet_scenario.py` runs one replication of a MANET scenario with
+ODR, AODV, OLSR or DSDV and writes FlowMonitor XML, the ODR counters (ODR
+runs) and a JSON metadata file:
+
+```sh
+./ns3 run "contrib/odr/scenarios/manet_scenario.py --protocol odr --nodes 50 --run 1"
+./ns3 run "contrib/odr/scenarios/manet_scenario.py --help"
+```
+
+Defaults: 50 nodes in 1000 m × 1000 m, steady-state random waypoint at
+1–10 m/s without pause, 802.11b at 11 Mb/s, unit-disk range of 250 m,
+10 CBR flows of 4 × 512-byte packets per second, 200 s runs with traffic
+between 10 s and 190 s, AODV HELLO disabled.
+
+For a given seed and run, every protocol sees the same trajectories and the
+same flows (fixed random stream blocks per subsystem; traffic matrix drawn
+from seed and run only). The metadata `config_id` fingerprints the network
+configuration, so `(config_id, seed, run)` pairs protocols replication by
+replication.
+
+Measurement notes, each verified on this code base:
+
+- **Offered load.** Data sources are `odr::CbrSource`, not
+  `OnOffApplication`. When OLSR or DSDV have no route, the socket refuses
+  the packet; `OnOffApplication` skips it silently and FlowMonitor never
+  sees it. On a sparse 20-node test run, FlowMonitor alone reported a PDR of
+  0.81 for OLSR where the delivered-over-offered ratio was 0.10. Use the
+  per-flow `attempted` count from the metadata as the PDR denominator;
+  `accepted` equals FlowMonitor's `txPackets`.
+- **Loss.** Compute losses as offered − received, not with FlowMonitor's
+  `lostPackets`: packets still parked by a routing protocol at the end of the
+  run are in neither count.
+- **Hop count.** FlowMonitor's `timesForwarded` over-counts by one every
+  packet a reactive protocol parked during a discovery (it re-enters IP
+  through the loopback device). On a 2-hop chain: ODR 2.06, AODV 2.02,
+  OLSR 2.00. Report hop counts from reactive protocols with that caveat, or
+  not at all.
+- **Control overhead.** FlowMonitor also classifies routing control
+  traffic; the metadata gives its UDP port (`control_port`). For ODR, prefer
+  the transmission counters of `odr-stats.csv`, which count every
+  rebroadcast.
+
 ## Tests
 
-`./test.py -s odr` runs 9 cases: header serialization and sizes, sequence
+`./test.py -s odr` runs 10 cases: header serialization and sizes, sequence
 number wrap-around, routing table update/invalidation/expiry rules, RREQ
-duplicate cache, packet queue, and four Wi-Fi scenarios with deterministic
-radio range (4-hop expanding ring discovery, intermediate cached reply, MAC
-break detection and repair, RERR propagation up to a partitioned source).
+duplicate cache, packet queue, four Wi-Fi scenarios with deterministic radio
+range (4-hop expanding ring discovery, intermediate cached reply, MAC break
+detection and repair, RERR propagation up to a partitioned source), and
+`CbrSource` accounting of socket refusals.
