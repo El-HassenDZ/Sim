@@ -120,8 +120,8 @@ sent = delivered + routing drops + MAC/PHY losses + `data_queued_at_end` + in fl
 ## Scenario script
 
 `scenarios/manet_scenario.py` runs one replication of a MANET scenario with
-ODR, AODV, OLSR or DSDV and writes FlowMonitor XML, the ODR counters (ODR
-runs) and a JSON metadata file:
+ODR, AODV, OLSR or DSDV and writes FlowMonitor XML, per-node routing control
+counts, the ODR counters (ODR runs) and a JSON metadata file:
 
 ```sh
 ./ns3 run "contrib/odr/scenarios/manet_scenario.py --protocol odr --nodes 50 --run 1"
@@ -156,10 +156,33 @@ Measurement notes, each verified on this code base:
   through the loopback device). On a 2-hop chain: ODR 2.06, AODV 2.02,
   OLSR 2.00. Report hop counts from reactive protocols with that caveat, or
   not at all.
-- **Control overhead.** FlowMonitor also classifies routing control
-  traffic; the metadata gives its UDP port (`control_port`). For ODR, prefer
-  the transmission counters of `odr-stats.csv`, which count every
-  rebroadcast.
+- **Control overhead.** FlowMonitor ignores every non-unicast packet
+  (`Ipv4FlowProbe` returns early on broadcasts), so RREQ floods, HELLO
+  beacons and broadcast RERRs never appear in its statistics. The scenario
+  counts control traffic with `odr::ControlTrafficMonitor` on the IPv4 `Tx`
+  trace, per transmission and per hop, on the protocol's UDP port, and writes
+  it to `<tag>.control.csv`. On ODR it matches the protocol's own counters
+  exactly (unit test).
+
+## Campaigns and analysis
+
+```sh
+# 10 paired replications of each variant listed in the JSON file, 4 in parallel
+./ns3 run "contrib/odr/scenarios/run_campaign.py \
+    contrib/odr/scenarios/campaigns/aodv_baselines.json --runs 10 --jobs 4 \
+    -- --outdir /abs/path/results/stage0"
+
+# Per-run metrics, 95 % CIs per variant, paired differences against a reference
+python3 contrib/odr/analysis/analyze_results.py /abs/path/results/stage0 \
+    --reference aodv-ns3-default
+```
+
+A variant is a label, a protocol and extra scenario arguments (typically
+`--set ns3::aodv::RoutingProtocol::<Attribute>=<value>`). Arguments after
+`--` are shared by all variants, so their replications pair up. Re-running
+the same command resumes an interrupted campaign. The analysis uses only the
+Python standard library and writes `runs.csv`, `summary.csv` and
+`paired.csv`.
 
 ## Tests
 
