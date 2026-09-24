@@ -1,0 +1,107 @@
+[
+  {
+    "label": "aodv-h-art6",
+    "protocol": "aodv",
+    "args": [
+      "--aodv-hello",
+      "--set",
+      "ns3::aodv::RoutingProtocol::ActiveRouteTimeout=6s",
+      "--set",
+      "ns3::aodv::RoutingProtocol::MyRouteTimeout=12s",
+      "--set",
+      "ns3::aodv::RoutingProtocol::DeletePeriod=30s"
+    ]
+  },
+  {
+    "label": "aodv-h-art10",
+    "protocol": "aodv",
+    "args": [
+      "--aodv-hello",
+      "--set",
+      "ns3::aodv::RoutingProtocol::ActiveRouteTimeout=10s",
+      "--set",
+      "ns3::aodv::RoutingProtocol::MyRouteTimeout=20s",
+      "--set",
+      "ns3::aodv::RoutingProtocol::DeletePeriod=50s"
+    ]
+  },
+  {
+    "label": "aodv-h-destonly",
+    "protocol": "aodv",
+    "args": [
+      "--aodv-hello",
+      "--set",
+      "ns3::aodv::RoutingProtocol::DestinationOnly=true"
+    ]
+  },
+  {
+    "label": "aodv-h-nograt",
+    "protocol": "aodv",
+    "args": [
+      "--aodv-hello",
+      "--set",
+      "ns3::aodv::RoutingProtocol::GratuitousReply=false"
+    ]
+  },
+  {
+    "label": "aodv-h-ttl3",
+    "protocol": "aodv",
+    "args": [
+      "--aodv-hello",
+      "--set",
+      "ns3::aodv::RoutingProtocol::TtlStart=3"
+    ]
+  },
+  {
+    "label": "aodv-h-retries4",
+    "protocol": "aodv",
+    "args": [
+      "--aodv-hello",
+      "--set",
+      "ns3::aodv::RoutingProtocol::RreqRetries=4"
+    ]
+  },
+  {
+    "label": "aodv-h-hello2s",
+    "protocol": "aodv",
+    "args": [
+      "--aodv-hello",
+      "--set",
+      "ns3::aodv::RoutingProtocol::HelloInterval=2s"
+    ]
+  },
+  {
+    "label": "aodv-n-art10",
+    "protocol": "aodv",
+    "args": [
+      "--set",
+      "ns3::aodv::RoutingProtocol::ActiveRouteTimeout=10s",
+      "--set",
+      "ns3::aodv::RoutingProtocol::MyRouteTimeout=20s",
+      "--set",
+      "ns3::aodv::RoutingProtocol::DeletePeriod=50s"
+    ]
+  },
+  {
+    "label": "aodv-n-nblife5",
+    "protocol": "aodv",
+    "args": [
+      "--set",
+      "ns3::aodv::RoutingProtocol::AllowedHelloLoss=5"
+    ]
+  },
+  {
+    "label": "aodv-n-nblife5-art10",
+    "protocol": "aodv",
+    "args": [
+      "--set",
+      "ns3::aodv::RoutingProtocol::AllowedHelloLoss=5",
+      "--set",
+      "ns3::aodv::RoutingProtocol::ActiveRouteTimeout=10s",
+      "--set",
+      "ns3::aodv::RoutingProtocol::MyRouteTimeout=20s",
+      "--set",
+      "ns3::aodv::RoutingProtocol::DeletePeriod=50s"
+    ]
+  }
+]
