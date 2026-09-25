@@ -24,7 +24,8 @@ def save_results(aggregated, path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     def convert(obj):
         if isinstance(obj, np.ndarray): return obj.tolist()
-        if isinstance(obj, (np.float32, np.float64, np.floating)): return float(obj)
+        if isinstance(obj, (np.float32, np.float64, np.floating)): obj = float(obj)
+        if isinstance(obj, float) and obj != obj: return None   # NaN -> null (valid JSON)
         if isinstance(obj, (np.int32, np.int64, np.integer)): return int(obj)
         return obj
     def deep_convert(d):
@@ -36,6 +37,7 @@ def save_results(aggregated, path):
     print(f"[Saved] Results → {path}")
 
 def plot_results(aggregated, output_dir):
+    """One figure per metric: mean ± 95 % CI per variant over eval times."""
     try:
         import matplotlib
         matplotlib.use('Agg')
@@ -44,42 +46,31 @@ def plot_results(aggregated, output_dir):
         print("[Skip] matplotlib not available")
         return
     os.makedirs(output_dir, exist_ok=True)
-    times = sorted(aggregated.keys())
     metrics_to_plot = [
-        ('energy_efficiency',   'Energy Efficiency',    'EE Score',  True),
-        ('delay_ms',            'End-to-End Delay',     'Delay (ms)',False),
-        ('throughput_kbps',     'Throughput',           'kbps',      True),
-        ('energy_mJ',           'Energy Consumption',   'mJ',        False),
-        ('detection_rate',      'Detection Rate',       '(%)',        True),
-        ('false_positive_rate', 'False Positive Rate',  '(%)',        False),
+        ('pdr',                   'Packet Delivery Ratio',       'PDR'),
+        ('throughput_kbps',       'Throughput',                  'kbps'),
+        ('delay_proxy_ms',        'Delay proxy (hops x HOP_DELAY)', 'ms'),
+        ('energy_J',              'Energy consumed (data packets)', 'J'),
+        ('energy_eff_kbit_per_J', 'Energy efficiency',           'kbit/J'),
+        ('detection_rate',        'Detection Rate',              '%'),
+        ('false_positive_rate',   'False Positive Rate',         '%'),
+        ('adaptive_threshold',    'Trust threshold',             'threshold'),
     ]
-    for key, title, ylabel, _ in metrics_to_plot:
+    for key, title, ylabel in metrics_to_plot:
         fig, ax = plt.subplots(figsize=(8, 5))
-        means = [aggregated[t].get(key, {}).get('mean', 0)
-                 if isinstance(aggregated[t].get(key), dict)
-                 else aggregated[t].get(key, 0) for t in times]
-        stds  = [aggregated[t].get(key, {}).get('std', 0)
-                 if isinstance(aggregated[t].get(key), dict)
-                 else 0 for t in times]
-        ax.errorbar(times, means, yerr=stds, marker='o', linewidth=2,
-                    capsize=5, color='#2196F3', label='AT-AEES-MANET')
+        for variant, by_t in aggregated.items():
+            times = sorted(by_t)
+            means = [by_t[t][key]['mean'] for t in times]
+            cis = [0.0 if np.isnan(by_t[t][key]['ci95']) else by_t[t][key]['ci95']
+                   for t in times]
+            if all(np.isnan(means)):
+                continue
+            ax.errorbar(times, means, yerr=cis, marker='o', capsize=4, label=variant)
         ax.set_xlabel('Simulation Time (s)')
         ax.set_ylabel(ylabel)
-        ax.set_title(f'{title} over Time')
-        ax.legend(); ax.grid(True, alpha=0.3)
+        ax.set_title(f'{title} (mean ± 95 % CI)')
+        ax.legend(fontsize=8); ax.grid(True, alpha=0.3)
         fig.tight_layout()
         fname = f"{output_dir}/{key}.png"
-        fig.savefig(fname, dpi=150); plt.close(fig)
-        print(f"[Plot] Saved → {fname}")
-    # Adaptive threshold plot
-    if all(isinstance(aggregated[t].get('adaptive_threshold'), dict) for t in times):
-        fig, ax = plt.subplots(figsize=(8, 5))
-        thresh = [aggregated[t]['adaptive_threshold']['mean'] for t in times]
-        ax.plot(times, thresh, marker='s', color='#E91E63', linewidth=2, label='Adaptive Threshold')
-        ax.axhline(0.50, color='gray', linestyle='--', label='Static 0.50 (base paper)')
-        ax.set_xlabel('Simulation Time (s)'); ax.set_ylabel('Trust Threshold')
-        ax.set_title('Adaptive vs Static Trust Threshold')
-        ax.legend(); ax.grid(True, alpha=0.3); fig.tight_layout()
-        fname = f"{output_dir}/adaptive_threshold.png"
         fig.savefig(fname, dpi=150); plt.close(fig)
         print(f"[Plot] Saved → {fname}")

@@ -1,48 +1,108 @@
 """
 trust/adaptive_trust.py
 =======================
-Attack-Resilient Sliding-Window Trust Manager
+Attack-Resilient Sliding-Window Trust Manager (corrected version)
 
-Key innovations over base paper (EER-MANET-EFIAGNN):
-1. Sliding-window trust  — old good behaviour fades, recent bad behaviour punished fast
-2. Adaptive threshold    — context-aware threshold based on mobility/density/variance
-3. On-off attack detector — detects nodes that alternate good/bad behaviour
-4. Collusion filter      — majority-vote filtering on indirect trust reports
-5. Trust stability score — extra feature fed into GNN (not in base paper)
+Same five mechanisms as the original file (sliding-window DT, adaptive
+threshold, on-off detector, collusion filter, stability score), with the
+following corrections (see the review for the evidence behind each one):
+
+- The manager no longer receives the attacker list or generates behaviour.
+  It only consumes observations (observer, target, forwarded?) supplied by
+  the simulator; ground truth lives in simulation/behaviour.py and the
+  metrics that need it live in evaluation/metrics.py.
+- Direct trust is kept per (observer, target) pair; the `observer`
+  argument was previously ignored.
+- Indirect trust aggregates what neighbours report ABOUT THE TARGET
+  (DT_k(target)), not the neighbours' own trust value (DT(k)).
+- Partial windows are no longer flushed at every timestep, and windows
+  are weighted by their number of observations (Beta prior), so
+  WINDOW_SIZE keeps its meaning and single-sample windows no longer
+  produce 0/1 trust values.
+- Evidence keeps being recorded while a node is isolated: whether traffic
+  is still routed through it is the caller's (routing) decision.
+- The adaptive threshold is computed before suspicion is scored, and the
+  mobility term uses measured node speed instead of residual energy.
+- Suspicion (low RT) is scored from the first timestep; only the
+  oscillation term needs OSC_WINDOW samples.
+- is_trusted() and the flagged set use one definition.
+
+Ablation switches (constructor flags) allow each component to be disabled
+in the same simulator: sliding_window, adaptive_threshold, onoff_detector,
+collusion_filter.
+
+Hypothesis kept from the original design (state it in any write-up):
+the network-wide RT(j) used for flagging/isolation is the median of the
+per-observer RT_i(j) over the observers holding evidence on j, i.e. a
+centralised IDS view (or an ideal consensus), not a per-node decision.
 """
 
-import numpy as np
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple, Optional
+from typing import Callable, Dict, Optional, Tuple
+
+import numpy as np
+
 import config
+
+MOBILITY_REF_SPEED = getattr(config, 'MOBILITY_REF_SPEED', config.MAX_SPEED)
+COLLUSION_FILTER = getattr(config, 'COLLUSION_FILTER', 'mad')      # 'mad' | 'std'
+
+# report = recommendation_fn(recommender, target, true_dt)
+RecommendationFn = Callable[[int, int, float], float]
 
 
 @dataclass
-class InteractionRecord:
-    """Single interaction record stored in sliding window."""
-    timestamp: float
-    forwarded: bool       # did node actually forward?
-    delay: float          # observed forwarding delay (s)
-    pkt_size: int         # packet size in bytes
+class PairEvidence:
+    """Forwarding evidence gathered by one observer about one target."""
+    windows: deque = field(
+        default_factory=lambda: deque(maxlen=config.N_WINDOWS))  # (succ, n)
+    decay: float = config.DECAY_FACTOR
+    cur_succ: int = 0
+    cur_n: int = 0
+    total_n: int = 0
+
+    def add(self, forwarded: bool) -> None:
+        self.cur_succ += int(forwarded)
+        self.cur_n += 1
+        self.total_n += 1
+        if self.cur_n >= config.WINDOW_SIZE:
+            self.windows.append((self.cur_succ, self.cur_n))
+            self.cur_succ = 0
+            self.cur_n = 0
+
+    def direct_trust(self) -> float:
+        """
+        DT = (Σ d^k s_k + 1) / (Σ d^k n_k + 2), k = 0 most recent window
+        (the open window, if non-empty, is k = 0). Beta(1,1) prior: no
+        evidence gives 0.5, one success gives 2/3 rather than 1.
+        """
+        items = list(self.windows)
+        if self.cur_n > 0:
+            items.append((self.cur_succ, self.cur_n))
+        s_w = n_w = 0.0
+        for k, (s, n) in enumerate(reversed(items)):
+            weight = self.decay ** k
+            s_w += weight * s
+            n_w += weight * n
+        return (s_w + 1.0) / (n_w + 2.0)
 
 
 @dataclass
 class NodeTrustState:
-    """Full trust state for a single node."""
+    """Network-wide (aggregated) trust state for a single node."""
     node_id: int
-    windows: deque = field(default_factory=lambda: deque(maxlen=config.N_WINDOWS))
-    current_window: List[InteractionRecord] = field(default_factory=list)
     trust_history: deque = field(default_factory=lambda: deque(maxlen=20))
-    dt: float = 0.5           # direct trust
-    idt: float = 0.5          # indirect trust
-    rt: float = 0.5           # residual trust
-    trust_stability: float = 1.0   # NEW: variance-based stability score
-    oscillation_score: float = 0.0 # NEW: on-off attack indicator
-    suspicion_level: float = 0.0   # NEW: combined attack suspicion
+    dt: float = 0.5           # aggregated direct trust
+    idt: float = 0.5          # aggregated indirect trust
+    rt: float = 0.5           # aggregated residual trust
+    trust_stability: float = 1.0
+    oscillation_score: float = 0.0
+    suspicion_level: float = 0.0
     isolated: bool = False
     isolation_until: float = 0.0
     re_eval_at: float = 0.0
+    evidence_at_isolation: int = 0
     attack_type_suspected: Optional[str] = None
 
 
@@ -50,85 +110,88 @@ class SlidingWindowTrustManager:
     """
     Core trust engine for AT-AEES-MANET.
 
-    Replaces the static DT/IDT/RT computation of the base paper with:
-    - Exponentially-weighted sliding windows
-    - Dynamic threshold computation
-    - On-off attack detection via trust oscillation analysis
-    - Collusion-resistant indirect trust aggregation
+    Usage per timestep:
+        for each observed forwarding attempt:
+            record_observation(observer, target, t, forwarded)
+        update_all(t, positions)
     """
 
-    def __init__(self, n_nodes: int, rng: np.random.Generator,
-                 malicious_ids: List[int], attack_map: Dict[int, str]):
-        self.n_nodes    = n_nodes
-        self.rng        = rng
-        self.malicious  = set(malicious_ids)
-        self.attack_map = attack_map           # node_id -> attack type
+    def __init__(self, n_nodes: int,
+                 recommendation_fn: Optional[RecommendationFn] = None,
+                 sliding_window: bool = True,
+                 adaptive_threshold: bool = True,
+                 onoff_detector: bool = True,
+                 collusion_filter: bool = True):
+        self.n_nodes = n_nodes
+        self.sliding_window = sliding_window
+        self.use_adaptive_threshold = adaptive_threshold
+        self.onoff_detector = onoff_detector
+        self.collusion_filter = collusion_filter
+        self._obs_count = np.zeros(n_nodes, dtype=np.int64)
+        # Identity by default: recommenders report their true DT. The
+        # attack model may substitute false reports (badmouthing /
+        # ballot-stuffing) without the manager knowing who lies.
+        self.recommendation_fn = recommendation_fn
 
-        # Per-node trust state
+        self.evidence: Dict[Tuple[int, int], PairEvidence] = {}
         self.states: Dict[int, NodeTrustState] = {
-            i: NodeTrustState(node_id=i) for i in range(n_nodes)
-        }
+            i: NodeTrustState(node_id=i) for i in range(n_nodes)}
 
-        # Global adaptive threshold
         self.adaptive_threshold = config.TRUST_THRESHOLD_BASE
-        self.flagged: set = set()   # currently excluded nodes
+        self.flagged: set = set()
+        self._prev_positions: Optional[np.ndarray] = None
+        self._prev_t: Optional[float] = None
+
+        # Per-observer matrices, refreshed by update_all
+        self.DT = np.full((n_nodes, n_nodes), 0.5)
+        self.HAS_EV = np.zeros((n_nodes, n_nodes), dtype=bool)
+        self.RT = np.full((n_nodes, n_nodes), 0.5)
 
     # ── Public API ────────────────────────────────────────────
 
-    def record_interaction(self, observer: int, target: int,
-                           timestamp: float, delay: float = 0.01) -> None:
-        """Observer records an interaction with target node."""
-        state = self.states[target]
-        if state.isolated and timestamp < state.isolation_until:
-            return  # skip interactions while isolated
-
-        # Simulate behaviour based on attack type
-        forwarded = self._simulate_behaviour(target, timestamp)
-
-        rec = InteractionRecord(
-            timestamp=timestamp,
-            forwarded=forwarded,
-            delay=delay,
-            pkt_size=config.PKT_SIZE
-        )
-        state.current_window.append(rec)
-
-        # Close window when full
-        if len(state.current_window) >= config.WINDOW_SIZE:
-            self._close_window(target, timestamp)
+    def record_observation(self, observer: int, target: int, timestamp: float,
+                           forwarded: bool, delay: Optional[float] = None) -> None:
+        """
+        Observer reports whether target forwarded a packet it handed over.
+        `delay` is accepted for API compatibility; it is not part of the
+        trust formula (the original stored it without using it either).
+        """
+        if observer == target:
+            return
+        key = (observer, target)
+        ev = self.evidence.get(key)
+        if ev is None:
+            if self.sliding_window:
+                ev = PairEvidence()
+            else:   # static accumulation: no decay, unbounded history
+                ev = PairEvidence(windows=deque(), decay=1.0)
+            self.evidence[key] = ev
+        ev.add(bool(forwarded))
+        self._obs_count[target] += 1
 
     def update_all(self, t: float, node_positions: np.ndarray,
-                   node_energies: np.ndarray) -> None:
-        """Called at each simulation timestep to update all trust values."""
-        # Step 1: Flush partial windows
-        for node_id in range(self.n_nodes):
-            if self.states[node_id].current_window:
-                self._close_window(node_id, t)
+                   node_energies: Optional[np.ndarray] = None) -> None:
+        """
+        Called at each simulation timestep. `node_energies` is accepted for
+        API compatibility and no longer used (it served as a mobility proxy).
+        """
+        positions = np.asarray(node_positions, dtype=float)
+        adjacency = self._adjacency(positions)
 
-        # Step 2: Compute DT from sliding windows
-        for node_id in range(self.n_nodes):
-            self._compute_dt(node_id)
-
-        # Step 3: Compute IDT with collusion filter
-        for node_id in range(self.n_nodes):
-            self._compute_idt(node_id, node_positions)
-
-        # Step 4: Combine into RT
-        for node_id in range(self.n_nodes):
-            self._compute_rt(node_id, t)
-
-        # Step 5: Detect on-off attackers
+        self._compute_dt_matrix()
+        self._compute_rt_matrix(adjacency)
+        self._aggregate(t)
+        self._update_adaptive_threshold(t, positions, adjacency)
         for node_id in range(self.n_nodes):
             self._detect_on_off(node_id, t)
-
-        # Step 6: Update adaptive threshold
-        self._update_adaptive_threshold(node_positions, node_energies)
-
-        # Step 7: Update flagged set
         self._update_flagged(t)
 
     def get_trust(self, node_id: int) -> float:
         return self.states[node_id].rt
+
+    def get_trust_of(self, observer: int, target: int) -> float:
+        """Local view: RT held by `observer` about `target`."""
+        return float(self.RT[observer, target])
 
     def get_stability(self, node_id: int) -> float:
         return self.states[node_id].trust_stability
@@ -137,10 +200,7 @@ class SlidingWindowTrustManager:
         return self.states[node_id].suspicion_level
 
     def is_trusted(self, node_id: int) -> bool:
-        state = self.states[node_id]
-        if state.isolated:
-            return False
-        return state.rt >= self.adaptive_threshold
+        return node_id not in self.flagged
 
     def get_all_rt(self) -> np.ndarray:
         return np.array([self.states[i].rt for i in range(self.n_nodes)])
@@ -148,254 +208,172 @@ class SlidingWindowTrustManager:
     def get_flagged(self) -> set:
         return self.flagged.copy()
 
-    def get_detection_rate(self) -> float:
-        detected = len(self.malicious & self.flagged)
-        return detected / len(self.malicious) if self.malicious else 0.0
-
     # ── Core Trust Computation ────────────────────────────────
 
-    def _close_window(self, node_id: int, timestamp: float) -> None:
-        """Finalise current window and push to history."""
-        state = self.states[node_id]
-        if not state.current_window:
-            return
-        success = sum(1 for r in state.current_window if r.forwarded)
-        total   = len(state.current_window)
-        window_trust = success / total if total > 0 else 0.5
-        state.windows.append(window_trust)
-        state.current_window.clear()
+    def _adjacency(self, positions: np.ndarray) -> np.ndarray:
+        diff = positions[:, None, :] - positions[None, :, :]
+        dist = np.linalg.norm(diff, axis=2)
+        adj = dist <= config.TX_RANGE
+        np.fill_diagonal(adj, False)
+        return adj
 
-    def _compute_dt(self, node_id: int) -> None:
-        """
-        Exponentially weighted sliding window direct trust.
+    def _compute_dt_matrix(self) -> None:
+        self.DT.fill(0.5)
+        self.HAS_EV.fill(False)
+        for (i, j), ev in self.evidence.items():
+            self.DT[i, j] = ev.direct_trust()
+            self.HAS_EV[i, j] = ev.total_n > 0
 
-        Older windows decay with factor DECAY_FACTOR^k.
-        Recent bad behaviour has maximum impact.
-        Formula:
-            DT = Σ(decay^k * w_k) / Σ(decay^k)
-            where k=0 is most recent window
-        """
-        state = self.states[node_id]
-        windows = list(state.windows)
-        if not windows:
-            return
+    def _report(self, k: int, j: int, true_dt: float) -> float:
+        if self.recommendation_fn is None:
+            return true_dt
+        return float(np.clip(self.recommendation_fn(k, j, true_dt), 0.0, 1.0))
 
-        total_weight = 0.0
-        weighted_sum = 0.0
-        for k, w in enumerate(reversed(windows)):  # k=0 = most recent
-            weight = config.DECAY_FACTOR ** k
-            weighted_sum += weight * w
-            total_weight += weight
-
-        state.dt = weighted_sum / total_weight if total_weight > 0 else 0.5
-
-    def _compute_idt(self, node_id: int, positions: np.ndarray) -> None:
-        """
-        Collusion-resistant indirect trust.
-
-        Instead of simple average (base paper), we:
-        1. Only accept reports from trusted neighbours
-        2. Apply majority filtering — discard outlier reports
-        3. Weight by reporter's own trust score
-        """
-        state = self.states[node_id]
-        pos_target = positions[node_id]
-
-        reports = []
-        reporter_trusts = []
-
-        for nb_id in range(self.n_nodes):
-            if nb_id == node_id:
-                continue
-            dist = np.linalg.norm(positions[nb_id] - pos_target)
-            if dist > config.TX_RANGE:
-                continue
-            nb_state = self.states[nb_id]
-            # Only trust reports from non-isolated, trusted neighbours
-            if nb_state.isolated or nb_state.rt < config.TRUST_THRESHOLD_BASE * 0.8:
-                continue
-            reports.append(nb_state.dt)  # their direct observation of target
-            reporter_trusts.append(nb_state.rt)
-
-        if not reports:
-            state.idt = state.dt  # fallback: use own observation
-            return
-
-        reports = np.array(reports)
-        weights = np.array(reporter_trusts)
-
-        # Collusion filter: remove reports deviating > 2 std from median
+    def _filter_outliers(self, reports: np.ndarray) -> np.ndarray:
         median = np.median(reports)
-        std    = np.std(reports) + 1e-9
-        valid  = np.abs(reports - median) < 2.0 * std
-        if valid.sum() == 0:
-            valid = np.ones(len(reports), dtype=bool)
-
-        filtered_reports = reports[valid]
-        filtered_weights = weights[valid]
-        filtered_weights /= filtered_weights.sum()
-
-        state.idt = float(np.dot(filtered_reports, filtered_weights))
-
-    def _compute_rt(self, node_id: int, t: float) -> None:
-        """Combine DT and IDT into RT, update history and stability."""
-        state = self.states[node_id]
-        rt = config.TRUST_ALPHA * state.dt + config.TRUST_BETA * state.idt
-        rt = float(np.clip(rt, 0.0, 1.0))
-        state.rt = rt
-        state.trust_history.append(rt)
-
-        # Trust stability = inverse of variance over recent history
-        if len(state.trust_history) >= 3:
-            variance = float(np.var(list(state.trust_history)))
-            state.trust_stability = float(np.exp(-10.0 * variance))
+        if COLLUSION_FILTER == 'std':            # original rule
+            spread = np.std(reports) + 1e-9
+            valid = np.abs(reports - median) < 2.0 * spread
         else:
-            state.trust_stability = 1.0
+            # MAD is not inflated by the outliers it must remove.
+            mad = 1.4826 * np.median(np.abs(reports - median))
+            valid = np.abs(reports - median) <= 2.0 * max(mad, 0.05)
+        if not valid.any():
+            valid = np.ones(len(reports), dtype=bool)
+        return valid
+
+    def _indirect_trust(self, i: int, j: int, adjacency: np.ndarray) -> float:
+        """
+        IDT_i(j): what i's one-hop neighbours k report about j, weighted by
+        i's own direct trust in k. Only recommenders i trusts
+        (DT_i(k) >= 0.8 * TRUST_THRESHOLD_BASE, as in the original) and
+        that hold evidence on j are consulted.
+        """
+        cand = adjacency[i] & self.HAS_EV[:, j]
+        cand[j] = False
+        cand &= self.HAS_EV[i]       # i must know the recommender
+        ks = np.nonzero(cand)[0]
+        if ks.size:
+            w = self.DT[i, ks]
+            keep = w >= config.TRUST_THRESHOLD_BASE * 0.8
+            ks, w = ks[keep], w[keep]
+        if ks.size == 0:
+            return float(self.DT[i, j])  # fallback: own observation
+        reports = np.array([self._report(int(k), j, self.DT[k, j]) for k in ks])
+        if self.collusion_filter:
+            valid = self._filter_outliers(reports)
+        else:
+            valid = np.ones(len(reports), dtype=bool)
+        w = w[valid]
+        return float(np.dot(reports[valid], w / w.sum()))
+
+    def _compute_rt_matrix(self, adjacency: np.ndarray) -> None:
+        self.IDT = self.DT.copy()
+        for i in range(self.n_nodes):
+            for j in np.nonzero(self.HAS_EV[i])[0]:
+                self.IDT[i, j] = self._indirect_trust(i, int(j), adjacency)
+        rt = config.TRUST_ALPHA * self.DT + config.TRUST_BETA * self.IDT
+        self.RT = np.clip(rt, 0.0, 1.0)
+
+    def _aggregate(self, t: float) -> None:
+        """Network-wide view: median over observers holding evidence."""
+        for j in range(self.n_nodes):
+            state = self.states[j]
+            obs = self.HAS_EV[:, j]
+            if obs.any():
+                state.dt = float(np.median(self.DT[obs, j]))
+                state.idt = float(np.median(self.IDT[obs, j]))
+                state.rt = float(np.median(self.RT[obs, j]))
+            state.trust_history.append(state.rt)
+            if len(state.trust_history) >= 3:
+                variance = float(np.var(list(state.trust_history)))
+                state.trust_stability = float(np.exp(-10.0 * variance))
+            else:
+                state.trust_stability = 1.0
 
     def _detect_on_off(self, node_id: int, t: float) -> None:
-        """
-        On-Off attack detection via oscillation scoring.
-
-        An on-off attacker shows HIGH variance in trust history —
-        they behave well, then attack, then behave well again.
-        We detect this by computing rolling variance over OSC_WINDOW steps.
-        If variance exceeds OSC_THRESHOLD → flag as oscillating attacker.
-        """
+        """Oscillation + low-RT suspicion scoring (coefficients unchanged)."""
         state = self.states[node_id]
         history = list(state.trust_history)
 
-        if len(history) < config.OSC_WINDOW:
-            return
+        oscillating = False
+        if self.onoff_detector and len(history) >= config.OSC_WINDOW:
+            recent = history[-config.OSC_WINDOW:]
+            variance = float(np.var(recent))
+            changes = sum(
+                1 for i in range(1, len(recent) - 1)
+                if (recent[i] - recent[i - 1]) * (recent[i + 1] - recent[i]) < 0)
+            state.oscillation_score = variance * (1 + changes / config.OSC_WINDOW)
+            oscillating = state.oscillation_score > config.OSC_THRESHOLD
+        state.attack_type_suspected = 'on_off' if oscillating else None
 
-        recent = history[-config.OSC_WINDOW:]
-        variance = float(np.var(recent))
-        # Count direction changes (oscillation count)
-        changes = sum(
-            1 for i in range(1, len(recent) - 1)
-            if (recent[i] - recent[i-1]) * (recent[i+1] - recent[i]) < 0
-        )
-        oscillation_score = variance * (1 + changes / config.OSC_WINDOW)
-        state.oscillation_score = oscillation_score
-
-        # Combined suspicion
-        suspicion = state.suspicion_level * 0.4  # carry forward memory
-        # Low RT
+        suspicion = state.suspicion_level * 0.4
         if state.rt < self.adaptive_threshold:
             suspicion += 0.35
-        # High oscillation
-        if oscillation_score > config.OSC_THRESHOLD:
+        if oscillating:
             suspicion += 0.40
-            state.attack_type_suspected = 'on_off'
-        # Low stability
         if state.trust_stability < 0.3:
             suspicion += 0.20
-        # Previously flagged penalty
         if node_id in self.flagged:
             suspicion += 0.15
-
         state.suspicion_level = float(np.clip(suspicion, 0.0, 1.0))
 
-        # Isolate if highly suspicious
-        if suspicion >= 0.6 and not state.isolated:
+        if state.suspicion_level >= 0.6 and not state.isolated:
             state.isolated = True
             state.isolation_until = t + config.ISOLATION_TIME
             state.re_eval_at = t + config.RE_EVAL_AFTER
+            state.evidence_at_isolation = self._evidence_count(node_id)
 
-    def _update_adaptive_threshold(self, positions: np.ndarray,
-                                   energies: np.ndarray) -> None:
+    def _evidence_count(self, node_id: int) -> int:
+        return int(self._obs_count[node_id])
+
+    def _update_adaptive_threshold(self, t: float, positions: np.ndarray,
+                                   adjacency: np.ndarray) -> None:
         """
-        Dynamically compute trust threshold based on network context.
-
-        threshold = base + Δ_mobility + Δ_density + Δ_variance + Δ_loss
-        Clamped to [THRESH_MIN, THRESH_MAX]
-
-        Logic:
-        - High mobility  → stricter threshold (harder to verify nodes)
-        - Low density    → stricter threshold (fewer witnesses)
-        - High variance  → stricter threshold (network under stress)
-        - High loss      → stricter threshold (possible ongoing attack)
+        threshold = base + Δ_mobility + Δ_density + Δ_variance + Δ_loss,
+        clamped to [THRESH_MIN, THRESH_MAX].
         """
-        # Mobility estimate: average pairwise distance change proxy
-        # (use energy depletion rate as proxy for mobility-induced overhead)
-        avg_energy = float(np.mean(energies))
-        energy_fraction = avg_energy / config.E_INITIAL
-        mobility_delta = config.THRESH_MOBILITY_W * (1.0 - energy_fraction) * 0.3
+        mobility_delta = 0.0
+        if self._prev_positions is not None and t > self._prev_t:
+            speed = np.linalg.norm(positions - self._prev_positions, axis=1)
+            mean_speed = float(np.mean(speed)) / (t - self._prev_t)
+            mobility_delta = config.THRESH_MOBILITY_W * min(
+                1.0, mean_speed / MOBILITY_REF_SPEED)
+        self._prev_positions = positions.copy()
+        self._prev_t = t
 
-        # Density: average neighbours within TX_RANGE
-        n_neighbours = []
-        for i in range(len(positions)):
-            dists = np.linalg.norm(positions - positions[i], axis=1)
-            n_neighbours.append(np.sum(dists < config.TX_RANGE) - 1)
-        avg_density = float(np.mean(n_neighbours)) / self.n_nodes
+        avg_density = float(adjacency.sum(axis=1).mean()) / self.n_nodes
         density_delta = config.THRESH_DENSITY_W * (0.5 - avg_density)
 
-        # Trust variance across network
-        rt_values = np.array([self.states[i].rt for i in range(self.n_nodes)])
-        trust_variance = float(np.var(rt_values))
-        variance_delta = config.THRESH_VARIANCE_W * trust_variance
+        rt_values = self.get_all_rt()
+        variance_delta = config.THRESH_VARIANCE_W * float(np.var(rt_values))
 
-        # Packet loss proxy: mean of (1 - dt) for all nodes
         mean_loss = float(np.mean([1.0 - self.states[i].dt
                                    for i in range(self.n_nodes)]))
         loss_delta = config.THRESH_LOSS_W * mean_loss * 0.3
 
-        threshold = (config.TRUST_THRESHOLD_BASE
-                     + mobility_delta + density_delta
-                     + variance_delta + loss_delta)
+        if not self.use_adaptive_threshold:
+            self.adaptive_threshold = config.TRUST_THRESHOLD_BASE
+            return
+        threshold = (config.TRUST_THRESHOLD_BASE + mobility_delta
+                     + density_delta + variance_delta + loss_delta)
         self.adaptive_threshold = float(
             np.clip(threshold, config.THRESH_MIN, config.THRESH_MAX))
 
     def _update_flagged(self, t: float) -> None:
-        """Update set of excluded nodes based on RT and isolation status."""
         self.flagged.clear()
         for node_id, state in self.states.items():
-            # Re-evaluate isolated nodes
             if state.isolated and t >= state.re_eval_at:
-                if state.rt > self.adaptive_threshold * 0.8:
+                # Early release only on evidence gathered after isolation;
+                # otherwise the RT being judged is the one that caused it.
+                fresh = self._evidence_count(node_id) > state.evidence_at_isolation
+                if fresh and state.rt > self.adaptive_threshold * 0.8:
                     state.isolated = False
-                    # Suspicion decays slowly — never fully resets for caught nodes
                     state.suspicion_level = max(0.35, state.suspicion_level * 0.70)
                 elif t >= state.isolation_until:
                     state.isolated = False
                     state.suspicion_level = max(0.30, state.suspicion_level * 0.80)
 
-            # Flag based on combined criteria
-            is_bad = (
-                state.rt < self.adaptive_threshold
-                or state.isolated
-                or state.suspicion_level >= 0.8
-            )
-            if is_bad:
+            if (state.rt < self.adaptive_threshold or state.isolated
+                    or state.suspicion_level >= 0.8):
                 self.flagged.add(node_id)
-
-    def _simulate_behaviour(self, node_id: int, t: float) -> bool:
-        """
-        Simulate whether a node actually forwards a packet.
-        Malicious nodes behave according to their attack type.
-        """
-        if node_id not in self.malicious:
-            # Legitimate node: small chance of natural failure
-            return self.rng.random() > 0.05
-
-        attack = self.attack_map.get(node_id, 'blackhole')
-
-        if attack == 'blackhole':
-            return False  # always drops
-
-        elif attack == 'grayhole':
-            # Drops selectively — 60% of the time
-            return self.rng.random() > 0.60
-
-        elif attack == 'on_off':
-            # Alternates: good for 10s then bad for 10s
-            cycle = t % 20.0
-            if cycle < 10.0:
-                return self.rng.random() > 0.05   # behaving well
-            else:
-                return False                        # attacking
-
-        elif attack == 'collusion':
-            # Mostly bad but sometimes good to maintain plausible trust
-            return self.rng.random() > 0.75
-
-        return False

@@ -1,234 +1,133 @@
 """
 evaluation/metrics.py
 =====================
-Metrics, baseline comparison, and statistical testing.
+Aggregation across runs, confidence intervals and paired comparisons
+between variants run in the same simulator on the same seeds.
 
-Baselines include the base paper (EER-MANET-EFIAGNN) as a direct comparison.
+Removed from the received version:
+- BASELINE_DATA / compute_improvements: literature values from other
+  simulators, in other units, compared as percentages (the quick run
+  printed "+11174 %" energy efficiency and "-141738 %" energy);
+- run_ttest: a "paired" t-test against baseline samples synthesised as
+  N(value, 5 %·value) with a fixed seed. Its p-values measure nothing.
 """
 
-import numpy as np
+import math
 from typing import Dict, List
+
+import numpy as np
 from scipy import stats
+
 import config
 
-
-# ── Baseline data from literature ────────────────────────────────────────────
-# Values from Table 3 of base paper + EER-MANET-EFIAGNN paper values
-BASELINE_DATA = {
-    'SO-RA-MANET': {
-        10: {'ee': 4.23, 'delay': 8.52,  'tp': 903.1,  'ec': 0.32, 'dr': 55.0},
-        30: {'ee': 5.05, 'delay': 7.11,  'tp': 1089.4, 'ec': 0.79, 'dr': 65.8},
-        40: {'ee': 5.54, 'delay': 6.83,  'tp': 1142.0, 'ec': 1.08, 'dr': 66.1},
-    },
-    'ARP-MANET-GA': {
-        10: {'ee': 5.04, 'delay': 6.95,  'tp': 878.3,  'ec': 0.11, 'dr': 33.3},
-        30: {'ee': 5.98, 'delay': 5.87,  'tp': 1076.2, 'ec': 0.28, 'dr': 39.4},
-        40: {'ee': 6.24, 'delay': 5.60,  'tp': 1115.0, 'ec': 0.38, 'dr': 40.5},
-    },
-    'CEERP-SC-MANET': {
-        10: {'ee': 3.52, 'delay': 5.99,  'tp': 859.4,  'ec': 0.19, 'dr': 44.6},
-        30: {'ee': 4.15, 'delay': 5.08,  'tp': 1044.8, 'ec': 0.47, 'dr': 51.7},
-        40: {'ee': 4.74, 'delay': 4.76,  'tp': 1092.0, 'ec': 0.65, 'dr': 55.8},
-    },
-    # Base paper — direct competitor
-    'EER-MANET-EFIAGNN': {
-        10: {'ee': 7.86, 'delay': 0.13,  'tp': 1263.9, 'ec': 0.14, 'dr': 68.56},
-        30: {'ee': 7.86, 'delay': 0.13,  'tp': 1263.9, 'ec': 0.14, 'dr': 78.64},
-        40: {'ee': 7.86, 'delay': 0.13,  'tp': 1263.9, 'ec': 0.14, 'dr': 79.26},
-    },
-}
+METRICS = ['pdr', 'throughput_kbps', 'delay_proxy_ms', 'avg_hops', 'energy_J',
+           'energy_eff_kbit_per_J', 'alive_nodes', 'detection_rate',
+           'false_positive_rate', 'precision', 'adaptive_threshold']
 
 
-class ResultAggregator:
-    """Aggregate metrics across multiple runs."""
-
-    def __init__(self):
-        self.runs: List[List[Dict]] = []
-
-    def add_run(self, run_results: List[Dict]) -> None:
-        self.runs.append(run_results)
-
-    def aggregate(self) -> Dict:
-        """Return mean ± std for each metric at each eval time."""
-        if not self.runs:
-            return {}
-
-        eval_times = [r['time'] for r in self.runs[0]]
-        aggregated = {}
-
-        for i, et in enumerate(eval_times):
-            snapshots = [run[i] for run in self.runs if i < len(run)]
-            if not snapshots:
-                continue
-
-            agg = {'time': et}
-            for key in snapshots[0].keys():
-                if key == 'time':
-                    continue
-                if key == 'per_attack_dr':
-                    agg[key] = {}
-                    for at in config.ATTACK_TYPES:
-                        vals = [s['per_attack_dr'].get(at, 0.0) for s in snapshots]
-                        agg[key][at] = {'mean': float(np.mean(vals)),
-                                        'std': float(np.std(vals))}
-                elif isinstance(snapshots[0][key], float):
-                    vals = [s[key] for s in snapshots]
-                    agg[key] = {'mean': float(np.mean(vals)),
-                                'std': float(np.std(vals)),
-                                'all': vals}
-                else:
-                    agg[key] = snapshots[0][key]
-            aggregated[et] = agg
-
-        return aggregated
+def mean_ci95(values) -> Dict:
+    """NaN-aware mean, sample SD and 95 % Student-t half-width."""
+    x = np.asarray([v for v in values if not (isinstance(v, float) and math.isnan(v))],
+                   dtype=float)
+    n = int(x.size)
+    out = {'n': n, 'all': [float(v) for v in values]}
+    if n == 0:
+        out.update(mean=float('nan'), sd=float('nan'), ci95=float('nan'))
+        return out
+    out['mean'] = float(x.mean())
+    if n < 2:
+        out.update(sd=float('nan'), ci95=float('nan'))
+        return out
+    sd = float(x.std(ddof=1))
+    out.update(sd=sd, ci95=float(stats.t.ppf(0.975, n - 1) * sd / math.sqrt(n)))
+    return out
 
 
-def compute_improvements(our_results: Dict, method: str) -> Dict:
-    """Compute % improvement over a baseline method."""
-    improvements = {}
-    baseline = BASELINE_DATA.get(method, {})
+def aggregate(results: Dict[str, List[List[Dict]]]) -> Dict:
+    """results[variant][run] = list of snapshots -> stats per variant/time."""
+    out = {}
+    for variant, runs in results.items():
+        out[variant] = {}
+        times = [s['time'] for s in runs[0]]
+        for i, t in enumerate(times):
+            snaps = [run[i] for run in runs]
+            agg = {m: mean_ci95([s[m] for s in snaps]) for m in METRICS}
+            agg['per_attack_dr'] = {
+                at: mean_ci95([s['per_attack_dr'][at] for s in snaps])
+                for at in config.ATTACK_TYPES}
+            out[variant][t] = agg
+    return out
 
-    for t, agg in our_results.items():
-        t_key = int(t)
-        if t_key not in baseline:
+
+def paired_vs(results: Dict[str, List[List[Dict]]], ref: str,
+              metrics=('pdr', 'detection_rate', 'false_positive_rate',
+                       'energy_J', 'delay_proxy_ms')) -> Dict:
+    """
+    Variant − ref at the last snapshot, paired by seed (same scenario,
+    mobility, flows and behaviour draws). Paired t-test over runs.
+    """
+    out = {}
+    ref_runs = results[ref]
+    for variant, runs in results.items():
+        if variant == ref:
             continue
-        bl = baseline[t_key]
-        improvements[t] = {}
-
-        def pct(ours, theirs, higher_better=True):
-            if theirs == 0:
-                return 0.0
-            delta = ((ours - theirs) / abs(theirs)) * 100.0
-            return delta if higher_better else -delta
-
-        our_ee  = agg.get('energy_efficiency', {}).get('mean', 0)
-        our_del = agg.get('delay_ms', {}).get('mean', 100)
-        our_tp  = agg.get('throughput_kbps', {}).get('mean', 0)
-        our_ec  = agg.get('energy_mJ', {}).get('mean', 1)
-        our_dr  = agg.get('detection_rate', {}).get('mean', 0)
-        our_fpr = agg.get('false_positive_rate', {}).get('mean', 0)
-
-        improvements[t] = {
-            'Energy Eff (%)':     pct(our_ee,  bl['ee'],  True),
-            'Delay (ms)':         pct(our_del, bl['delay'], False),
-            'Throughput (kbps)':  pct(our_tp,  bl['tp'],  True),
-            'Energy Cons (mJ)':   pct(our_ec,  bl['ec'],  False),
-            'Detection Rate (%)': pct(our_dr,  bl['dr'],  True),
-            'False Positive (%)': f"FPR={our_fpr:.1f}%",
-        }
-
-    return improvements
-
-
-def run_ttest(our_results: Dict, method: str) -> Dict:
-    """Paired t-test against baseline."""
-    pvals = {}
-    baseline = BASELINE_DATA.get(method, {})
-
-    metrics = ['energy_efficiency', 'delay_ms', 'throughput_kbps',
-               'energy_mJ', 'detection_rate']
-
-    for metric in metrics:
-        our_vals = []
-        for t, agg in our_results.items():
-            t_key = int(t)
-            if t_key in baseline and metric in agg:
-                our_vals.extend(agg[metric].get('all', []))
-
-        if len(our_vals) < 2:
-            pvals[metric] = 0.05
-            continue
-
-        # Synthetic baseline values with small variance
-        bl_vals = []
-        for t, agg in our_results.items():
-            t_key = int(t)
-            if t_key in baseline:
-                bl_map = {'energy_efficiency': 'ee', 'delay_ms': 'delay',
-                          'throughput_kbps': 'tp', 'energy_mJ': 'ec',
-                          'detection_rate': 'dr'}
-                bl_key = bl_map.get(metric)
-                if bl_key:
-                    bl_base = baseline[t_key][bl_key]
-                    n = len(agg.get(metric, {}).get('all', [1]))
-                    bl_vals.extend(
-                        np.random.default_rng(42).normal(
-                            bl_base, bl_base * 0.05, n).tolist())
-
-        if len(bl_vals) == 0:
-            pvals[metric] = 0.05
-            continue
-
-        min_len = min(len(our_vals), len(bl_vals))
-        _, p = stats.ttest_rel(our_vals[:min_len], bl_vals[:min_len])
-        pvals[metric] = float(p)
-
-    return pvals
-
-
-def print_results(aggregated: Dict, run_label: str = "AT-AEES-MANET") -> None:
-    print(f"\n{'='*70}")
-    print(f"  {run_label} — Simulation Results")
-    print(f"{'='*70}")
-    print(f"  {'Time':8s} | {'EE':8s} | {'Delay(ms)':11s} | "
-          f"{'TP(kbps)':12s} | {'EC(mJ)':10s} | {'DR(%)':8s} | "
-          f"{'FPR(%)':8s} | {'Thresh':6s}")
-    print(f"  {'-'*8}-+-{'-'*8}-+-{'-'*11}-+-{'-'*12}-+-{'-'*10}-+"
-          f"-{'-'*8}-+-{'-'*8}-+-{'-'*6}")
-
-    for t, agg in sorted(aggregated.items()):
-        ee  = agg.get('energy_efficiency', {}).get('mean', 0)
-        dl  = agg.get('delay_ms', {}).get('mean', 0)
-        tp  = agg.get('throughput_kbps', {}).get('mean', 0)
-        ec  = agg.get('energy_mJ', {}).get('mean', 0)
-        dr  = agg.get('detection_rate', {}).get('mean', 0)
-        fpr = agg.get('false_positive_rate', {}).get('mean', 0)
-        thr = agg.get('adaptive_threshold', {}).get('mean', 0) \
-              if isinstance(agg.get('adaptive_threshold'), dict) \
-              else agg.get('adaptive_threshold', 0.5)
-        print(f"  t={int(t):3d}    | {ee:8.3f} | {dl:11.4f} | "
-              f"{tp:12.2f} | {ec:10.1f} | {dr:8.2f} | "
-              f"{fpr:8.2f} | {thr:6.3f}")
-
-    # Per-attack detection
-    print(f"\n{'='*70}")
-    print(f"  Per-Attack Detection Rate (%)")
-    print(f"{'='*70}")
-    for t, agg in sorted(aggregated.items()):
-        pad = agg.get('per_attack_dr', {})
-        if not pad:
-            continue
-        parts = []
-        for at, vals in pad.items():
-            if isinstance(vals, dict):
-                parts.append(f"{at}: {vals['mean']:.1f}%")
+        out[variant] = {}
+        for m in metrics:
+            a = np.array([r[-1][m] for r in runs], dtype=float)
+            b = np.array([r[-1][m] for r in ref_runs], dtype=float)
+            ok = ~(np.isnan(a) | np.isnan(b))
+            d = a[ok] - b[ok]
+            res = mean_ci95(list(d))
+            if d.size >= 2 and np.std(d) > 0:
+                res['p'] = float(stats.ttest_rel(a[ok], b[ok]).pvalue)
             else:
-                parts.append(f"{at}: {vals:.1f}%")
-        print(f"  t={int(t):3d}: " + " | ".join(parts))
+                res['p'] = float('nan')
+            out[variant][m] = res
+    return out
 
-    # Comparison vs all baselines
-    print(f"\n{'='*80}")
-    print(f"  {run_label} vs Baselines — % Improvement")
-    print(f"{'='*80}")
-    for method in config.BASELINE_METHODS:
-        improvements = compute_improvements(aggregated, method)
-        if not improvements:
-            continue
-        print(f"\n  vs {method}:")
-        for t, impr in sorted(improvements.items()):
-            print(f"    t={int(t):3d}:")
-            for metric, val in impr.items():
-                if isinstance(val, float):
-                    arrow = "↑" if val > 0 else "↓"
-                    print(f"      {metric:25s}: {val:+.2f}% {arrow}")
-                else:
-                    print(f"      {metric:25s}: {val}")
 
-    # T-test
-    print(f"\n{'='*70}")
-    print(f"  Paired t-test p-values vs EER-MANET-EFIAGNN (base paper)")
-    print(f"{'='*70}")
-    pvals = run_ttest(aggregated, 'EER-MANET-EFIAGNN')
-    for metric, p in pvals.items():
-        sig = "✓ significant" if p < 0.05 else "✗ not significant"
-        print(f"  {metric:25s}: p={p:.4f}  {sig}")
+def _fmt(s: Dict, digits: int = 2) -> str:
+    if s['n'] == 0 or math.isnan(s['mean']):
+        return 'n/a'
+    if math.isnan(s['ci95']):
+        return f"{s['mean']:.{digits}f}"
+    return f"{s['mean']:.{digits}f} ± {s['ci95']:.{digits}f}"
+
+
+def print_results(aggregated: Dict) -> None:
+    cols = [('pdr', 'PDR', 3), ('throughput_kbps', 'TP (kbps)', 1),
+            ('delay_proxy_ms', 'Delay* (ms)', 2), ('energy_J', 'Energy (J)', 2),
+            ('detection_rate', 'DR (%)', 1), ('false_positive_rate', 'FPR (%)', 1),
+            ('precision', 'Prec. (%)', 1)]
+    print(f"\n{'=' * 118}")
+    print("  Results — mean ± 95 % CI half-width over runs "
+          "(* delay = hop-count proxy, not a measured delay)")
+    print(f"{'=' * 118}")
+    header = f"  {'variant':<20} {'t':>4} | " + " | ".join(f"{c[1]:>16}" for c in cols)
+    print(header)
+    print("  " + "-" * (len(header) - 2))
+    for variant, by_t in aggregated.items():
+        for t, agg in by_t.items():
+            cells = " | ".join(f"{_fmt(agg[m], d):>16}" for m, _, d in cols)
+            print(f"  {variant:<20} {int(t):>4} | {cells}")
+
+    print(f"\n  Per-attack detection rate (%) at the last snapshot "
+          f"(n = runs in which the attack type is present)")
+    for variant, by_t in aggregated.items():
+        last = by_t[max(by_t)]
+        parts = [f"{at}: {_fmt(s, 1)} (n={s['n']})"
+                 for at, s in last['per_attack_dr'].items()]
+        print(f"  {variant:<20} " + " | ".join(parts))
+
+
+def print_paired(paired: Dict, ref: str) -> None:
+    print(f"\n{'=' * 100}")
+    print(f"  Paired differences vs '{ref}' at the last snapshot "
+          f"(mean ± 95 % CI, paired t-test over seeds)")
+    print(f"{'=' * 100}")
+    for variant, by_m in paired.items():
+        parts = []
+        for m, s in by_m.items():
+            p = 'n/a' if math.isnan(s['p']) else f"{s['p']:.3g}"
+            parts.append(f"{m}: {_fmt(s, 3)} (p={p})")
+        print(f"  {variant:<20} " + " | ".join(parts))

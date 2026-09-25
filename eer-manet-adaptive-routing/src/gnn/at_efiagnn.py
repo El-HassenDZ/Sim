@@ -31,40 +31,20 @@ class ATEFIAGNNLayer:
         """
         H: (n, in_dim) node features
         adj: (n, n) adjacency (1 if connected, 0 otherwise)
-        trust_weights: (n, n) edge weights = RT_j × stability_j
+        trust_weights: (n, n) edge weights = RT_j × stability_j × (1 - suspicion_j)
 
-        Output: (n, out_dim)
+        agg_i   = Σ_j a_ij H_j,   a_ij = w_ij / (Σ_k w_ik + 1e-10) over neighbours
+        inter_i = Σ_j a_ij (H_i ⊙ H_j) = H_i ⊙ agg_i
+        out_i   = ReLU(H_i W_self + agg_i W_neigh + inter_i W_inter + b)
+
+        Vectorised; numerically identical to the original per-node loops
+        (see tests/test_corrected.py::test_gnn_vectorised_matches_loops).
         """
-        n = H.shape[0]
-        out = np.zeros((n, self.W_self.shape[1]))
-
-        for i in range(n):
-            # Self transform
-            h_self = H[i] @ self.W_self
-
-            # Trust-gated neighbour aggregation
-            neighbours = np.where(adj[i] > 0)[0]
-            if len(neighbours) > 0:
-                weights = trust_weights[i, neighbours]
-                w_sum = weights.sum() + 1e-10
-                # Weighted message
-                h_agg = np.zeros(H.shape[1])
-                for j, w in zip(neighbours, weights):
-                    h_agg += (w / w_sum) * H[j]
-                h_neigh = h_agg @ self.W_neigh
-
-                # Explicit feature interaction: i ⊗ neighbours
-                h_interact = np.zeros(H.shape[1])
-                for j, w in zip(neighbours, weights):
-                    h_interact += (w / w_sum) * (H[i] * H[j])  # element-wise
-                h_inter = h_interact @ self.W_inter
-            else:
-                h_neigh = np.zeros(self.W_neigh.shape[1])
-                h_inter = np.zeros(self.W_inter.shape[1])
-
-            out[i] = self._relu(h_self + h_neigh + h_inter + self.bias)
-
-        return out
+        W = np.where(adj > 0, trust_weights, 0.0)
+        A = W / (W.sum(axis=1, keepdims=True) + 1e-10)
+        agg = A @ H
+        out = H @ self.W_self + agg @ self.W_neigh + (H * agg) @ self.W_inter + self.bias
+        return self._relu(out)
 
     def _relu(self, x: np.ndarray) -> np.ndarray:
         return np.maximum(0.0, x)
@@ -103,7 +83,7 @@ class ATEFIAGNN:
         3: residual trust RT
         4: trust stability
         5: cluster membership strength
-        6: link quality
+        6: node degree / 10, capped at 1 (named "link quality" before)
         7: attack suspicion score
         8: mobility speed (normalised)
     """
@@ -163,33 +143,28 @@ class ATEFIAGNN:
                                 energies: np.ndarray,
                                 suspicion: np.ndarray) -> np.ndarray:
         """
-        Full routing score = GNN_score × route_alpha × trust
-                           + route_beta × energy_fraction
-                           - route_gamma × suspicion_penalty
+        composite_j = route_alpha × RT_j + route_beta × energy_fraction_j
+                    + GNN_SCORE_W × gnn_j − route_gamma × suspicion_j
+        (this is what the code has always computed; the previous docstring
+        described a multiplicative GNN × α × trust form that was never
+        implemented). Nodes with suspicion > 0.8 are excluded (−inf).
         """
-        # Build trust-gated edge weights
-        n = len(trust_scores)
-        trust_w = np.zeros((n, n))
-        for i in range(n):
-            for j in range(n):
-                if adj[i, j] > 0:
-                    # Gate = RT_j × stability_j × (1 - suspicion_j)
-                    trust_w[i, j] = (trust_scores[j]
-                                     * trust_stability[j]
-                                     * (1.0 - suspicion[j]))
+        trust_w = np.broadcast_to(
+            trust_scores * trust_stability * (1.0 - suspicion),
+            adj.shape) * (adj > 0)
 
         gnn_scores = self.forward(features, adj, trust_w)
         gnn_scores = (gnn_scores - gnn_scores.min()) / (gnn_scores.max() - gnn_scores.min() + 1e-10)
 
-        # Composite routing metric
         energy_frac = energies / config.E_INITIAL
         composite = (self.route_alpha * trust_scores
                    + self.route_beta  * energy_frac
-                   + 0.3 * gnn_scores
+                   + config.GNN_SCORE_W * gnn_scores
                    - self.route_gamma * suspicion)
 
-        # Zero out flagged/suspicious nodes
-        composite[suspicion > 0.8] = 0.0
+        # 0.0 is not the minimum of a score that can be negative
+        composite = composite.astype(float)
+        composite[suspicion > 0.8] = -np.inf
         return composite
 
     def update_route_weights(self, avg_trust: float, avg_energy_frac: float,

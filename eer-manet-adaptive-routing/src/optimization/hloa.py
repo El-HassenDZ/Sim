@@ -3,8 +3,11 @@ from typing import Callable, Tuple
 import config
 
 class HLOA:
-    def __init__(self, dim, fitness_fn, rng):
+    def __init__(self, dim, fitness_fn, rng, target_fitness=None):
         self.dim = dim
+        # Stop early once this fitness is reached (e.g. PDR = 1.0): further
+        # iterations cannot improve a saturated fitness.
+        self.target_fitness = target_fitness
         self.fitness_fn = fitness_fn
         self.rng = rng
         self.pop_size = config.HLOA_POP
@@ -62,11 +65,13 @@ class HLOA:
 
     def _select_best_candidate(self, candidates):
         scores = [self.fitness_fn(c) for c in candidates]
-        return candidates[int(np.argmax(scores))]
+        k = int(np.argmax(scores))
+        return candidates[k], scores[k]
 
     def optimise(self, verbose=True):
         self._initialise()
         self._evaluate_all()
+        self.iterations_run = 0
         for iteration in range(1, self.max_iter + 1):
             if len(self.fitness_history) >= 3:
                 recent = self.fitness_history[-3:]
@@ -83,13 +88,16 @@ class HLOA:
                     self._escape_move(i),
                     self._hormone_update(i),
                 ]
-                best_candidate = self._select_best_candidate(candidates)
-                fit = self.fitness_fn(best_candidate)
+                # Reuse the score already computed (was evaluated twice)
+                best_candidate, fit = self._select_best_candidate(candidates)
                 if fit > self.fitness[i]:
                     self.population[i] = best_candidate
                     self.fitness[i] = fit
             self._update_best_worst()
             self.fitness_history.append(self.best_fit)
+            self.iterations_run = iteration
+            if self.target_fitness is not None and self.best_fit >= self.target_fitness:
+                break
             if verbose and iteration % 10 == 0:
                 print(f"  HLOA iter {iteration:3d}/{self.max_iter} | Best fitness: {self.best_fit:.6f}")
         return self.best_sol.copy(), self.best_fit

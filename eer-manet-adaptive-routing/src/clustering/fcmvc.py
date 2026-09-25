@@ -10,7 +10,8 @@ class FCMVC:
         self.centroids = None
         self.labels = None
 
-    def fit(self, positions, energies, trust_scores, trusted_mask):
+    def fit(self, positions, energies, trust_scores, trusted_mask=None):
+        # trusted_mask is accepted for API compatibility; it was never used
         n = len(positions)
         E_norm = energies / config.E_INITIAL
         features = np.column_stack([positions / config.AREA_SIZE, E_norm, trust_scores])
