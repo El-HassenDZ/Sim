@@ -1,0 +1,16 @@
+# Simulation outputs (regenerate with python main.py)
+outputs/
+results/figures/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+venv/
+.venv/
+
+# OS
+.DS_Store
+Thumbs.db
