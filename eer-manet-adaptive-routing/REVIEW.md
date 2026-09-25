@@ -41,7 +41,7 @@ Les chiffres mis en avant par le README ne sont pas produits par le code : ils s
 | M7 | L'amorçage court de 0 à 8 s, puis la simulation repart à t = 0 | `manet_env.py:86, 94, 149` | Les nœuds on-off sont toujours en phase « bonne » pendant l'amorçage (t < 10 s) | Amorçage sur [−8, 0) |
 | M8 | Détecteur d'oscillation quasi inerte : `OSC_THRESHOLD` = 0,12 pour un score maximal observé de 0,127 | `config.py:56` ; sondes : 2 nœuds sur 19 signalés `on_off` | La détection des on-off vient de la RT basse, pas du détecteur | Signalé ; l'ablation le montre |
 | M9 | Types d'attaque tirés au hasard (de 1 à 6 blackholes sur 10) alors que la config dit « proportionnellement » ; TD par attaque = 0 quand le type est absent | `manet_env.py:44` ; `config.py:30` ; `manet_env.py:409` | Moyennes par attaque biaisées vers le bas | Plus fort reste ; NaN quand le type est absent |
-| M10 | Le JSON fourni n'est pas reproductible à l'identique ; générateur aléatoire partagé entre mobilité, confiance, FCM, HLOA et routage | Réexécution : run 2 identique ; runs 1, 3, 4 : même graine, PDR différent (0,598 contre 0,634 ; 0,582 contre 0,649) | Cause non établie : le code est déterministe sur cette machine (quick lancé ×4), donc le JSON vient probablement d'une autre version | Un flux aléatoire par composant |
+| M10 | Le JSON fourni n'est pas reproductible à l'identique ; générateur aléatoire partagé entre mobilité, confiance, FCM, HLOA et routage | Réexécution complète (10 runs, graine 42) : seul le run 2 est identique (PDR, énergie) ; énergie identique aussi au run 3, PDR différent ailleurs (ex. 0,582 contre 0,649, 0,759 contre 0,635). Moyennes à t = 40 s : PDR 0,626 contre 0,622 ; TD 85,0 % contre 87,0 % ; TFP 0,0 % dans les deux cas ; délai 10,96 contre 10,41 ms ; débit 210,1 contre 208,8 kbps | Même ordre de grandeur, donc le JSON vient bien de ce code ou d'une version voisine ; cause des écarts non établie (le code est déterministe sur cette machine : quick lancé ×4) | Un flux aléatoire par composant |
 | M11 | Aucune référence sans attaque ni sans défense ; l'écart-type est donné sans intervalle de confiance ; 10 attaquants seulement, donc un TD par pas de 10 points | `metrics.py:51-83` | Aucune conclusion causale possible | Variantes `no_attack`, `no_defense`, ablations ; IC 95 % |
 
 ## Mineurs
@@ -56,7 +56,7 @@ Les chiffres mis en avant par le README ne sont pas produits par le code : ils s
 - Le README promet `results/figures/` (7 figures) : dossier absent. Le code écrit dans `outputs/`.
 - La composante « False Positive Reduction » (README:31) n'existe pas dans le code.
 - La « collusion » ne produit aucune fausse recommandation.
-- Durée : le README annonce « ~20 min » ; la version reçue mesure environ 4 à 5 min par run, soit environ 45 min, en concurrence avec d'autres processus.
+- Durée : le README annonce « ~20 min » ; la version reçue a pris 42,9 min pour 10 runs sur 4 cœurs, en concurrence avec d'autres processus (non mesuré seul).
 
 ## Projet corrigé : résultats
 
