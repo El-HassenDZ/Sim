@@ -1,0 +1,473 @@
+/*
+ * aodv-attack-sim.cc — main scenario
+ * ==================================
+ * AODV MANET in ns-3.48 with two run modes and three attacks, WITHOUT any
+ * change to src/aodv:
+ *   - baseline : plain AODV, no attacker (performance reference);
+ *   - attack   : a fraction of nodes run blackhole, grayhole or RREQ-flood.
+ *
+ * The attacks live in malicious-aodv.{h,cc} (a routing wrapper around
+ * aodv) and rreq-flooder.{h,cc} (an application). This file only wires the
+ * scenario, the traffic, the energy model and the measurements.
+ *
+ * Output files (prefix given by --out, one set per run/mode):
+ *   <out>_metrics.csv    PDR, throughput, delay, routing overhead, energy…
+ *   <out>_routing.txt    per-node AODV routing tables at snapshot times
+ *   <out>_mobility.csv   time,node,x,y,speed samples
+ *   <out>_attacks.csv    attacker id, type, start, dropped/sent counters
+ *   <out>_flowmon.xml    raw FlowMonitor dump (audit)
+ *
+ * BUILD: drop scratch/aodv-attacks/ into an ns-3.48 tree and
+ *        ./ns3 run "aodv-attacks --mode=baseline --out=outputs/base"
+ * This code was written against the ns-3.48 API and reviewed statically;
+ * it was NOT compiled by the author (no ns-3 build available). Version
+ * sensitive spots are flagged with "NS3-VERSION" comments.
+ */
+#include "malicious-aodv.h"
+#include "rreq-flooder.h"
+
+#include "ns3/aodv-module.h"
+#include "ns3/applications-module.h"
+#include "ns3/core-module.h"
+#include "ns3/energy-module.h" // NS3-VERSION: energy helpers are in ns3::energy since ~3.38
+#include "ns3/flow-monitor-module.h"
+#include "ns3/internet-module.h"
+#include "ns3/mobility-module.h"
+#include "ns3/network-module.h"
+#include "ns3/udp-header.h"
+#include "ns3/wifi-module.h"
+
+#include <fstream>
+#include <map>
+#include <vector>
+
+using namespace ns3;
+
+NS_LOG_COMPONENT_DEFINE("AodvAttackSim");
+
+namespace
+{
+// AODV listens on UDP port 654 (RFC 3561). Any datagram to/from it is
+// routing-control traffic, i.e. routing overhead.
+constexpr uint16_t AODV_PORT = 654;
+
+struct OverheadCounter
+{
+    uint64_t ctrlPackets = 0;
+    uint64_t ctrlBytes = 0;
+} g_overhead;
+
+// Trace sink on Ipv4L3Protocol "Tx": count AODV control packets leaving
+// any node. The packet still carries its IPv4 header at this trace point.
+void
+CountRoutingOverhead(Ptr<const Packet> packet, Ptr<Ipv4> /*ipv4*/, uint32_t /*iface*/)
+{
+    Ptr<Packet> copy = packet->Copy();
+    Ipv4Header ipHdr;
+    if (copy->PeekHeader(ipHdr) == 0)
+    {
+        return;
+    }
+    if (ipHdr.GetProtocol() != 17) // UDP
+    {
+        return;
+    }
+    copy->RemoveHeader(ipHdr);
+    UdpHeader udpHdr;
+    if (copy->PeekHeader(udpHdr) == 0)
+    {
+        return;
+    }
+    if (udpHdr.GetSourcePort() == AODV_PORT || udpHdr.GetDestinationPort() == AODV_PORT)
+    {
+        g_overhead.ctrlPackets++;
+        g_overhead.ctrlBytes += packet->GetSize();
+    }
+}
+
+std::ofstream g_mobFile;
+
+void
+SampleMobility(NodeContainer nodes, Time interval, Time stop)
+{
+    double now = Simulator::Now().GetSeconds();
+    for (uint32_t i = 0; i < nodes.GetN(); ++i)
+    {
+        Ptr<MobilityModel> mob = nodes.Get(i)->GetObject<MobilityModel>();
+        if (!mob)
+        {
+            continue;
+        }
+        Vector p = mob->GetPosition();
+        Vector v = mob->GetVelocity();
+        double speed = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+        g_mobFile << now << "," << i << "," << p.x << "," << p.y << "," << speed << "\n";
+    }
+    if (Simulator::Now() + interval <= stop)
+    {
+        Simulator::Schedule(interval, &SampleMobility, nodes, interval, stop);
+    }
+}
+} // namespace
+
+int
+main(int argc, char* argv[])
+{
+    // ── Parameters (all overridable on the command line) ──────────────
+    std::string mode = "baseline";      // baseline | attack
+    std::string attack = "blackhole";   // blackhole | grayhole | flood | mixed
+    uint32_t nNodes = 50;
+    uint32_t nMalicious = 5;
+    double grayholeProb = 0.5;
+    double simTime = 100.0;
+    double areaX = 1000.0;
+    double areaY = 1000.0;
+    double minSpeed = 1.0;
+    double maxSpeed = 5.0;
+    double pause = 2.0;
+    uint32_t nFlows = 10;
+    std::string dataRate = "16kbps";
+    uint32_t packetSize = 512;
+    double txPower = 16.0; // dBm
+    double initEnergy = 100.0; // Joules
+    double attackStart = 20.0;
+    uint32_t run = 1;
+    std::string out = "outputs/run";
+
+    CommandLine cmd(__FILE__);
+    cmd.AddValue("mode", "baseline | attack", mode);
+    cmd.AddValue("attack", "blackhole | grayhole | flood | mixed", attack);
+    cmd.AddValue("nNodes", "number of nodes", nNodes);
+    cmd.AddValue("nMalicious", "number of attackers (attack mode)", nMalicious);
+    cmd.AddValue("grayholeProb", "grayhole drop probability", grayholeProb);
+    cmd.AddValue("simTime", "simulation time (s)", simTime);
+    cmd.AddValue("areaX", "area width (m)", areaX);
+    cmd.AddValue("areaY", "area height (m)", areaY);
+    cmd.AddValue("minSpeed", "min node speed (m/s)", minSpeed);
+    cmd.AddValue("maxSpeed", "max node speed (m/s)", maxSpeed);
+    cmd.AddValue("pause", "waypoint pause (s)", pause);
+    cmd.AddValue("nFlows", "number of CBR flows", nFlows);
+    cmd.AddValue("dataRate", "per-flow CBR rate", dataRate);
+    cmd.AddValue("packetSize", "app payload bytes", packetSize);
+    cmd.AddValue("txPower", "wifi tx power (dBm)", txPower);
+    cmd.AddValue("initEnergy", "initial node energy (J)", initEnergy);
+    cmd.AddValue("attackStart", "attack start time (s)", attackStart);
+    cmd.AddValue("run", "RNG run number (repetition)", run);
+    cmd.AddValue("out", "output file prefix", out);
+    cmd.Parse(argc, argv);
+
+    if (mode != "attack")
+    {
+        nMalicious = 0; // baseline reference is attack-free by construction
+    }
+    NS_ABORT_MSG_IF(nMalicious >= nNodes, "too many attackers");
+
+    // ── Reproducibility ───────────────────────────────────────────────
+    RngSeedManager::SetSeed(12345);
+    RngSeedManager::SetRun(run);
+
+    // ── Nodes ─────────────────────────────────────────────────────────
+    NodeContainer nodes;
+    nodes.Create(nNodes);
+
+    // ── Wi-Fi 802.11b ad-hoc ─────────────────────────────────────────
+    WifiHelper wifi;
+    wifi.SetStandard(WIFI_STANDARD_80211b);
+    YansWifiPhyHelper phy;
+    YansWifiChannelHelper channel = YansWifiChannelHelper::Default();
+    phy.SetChannel(channel.Create());
+    phy.Set("TxPowerStart", DoubleValue(txPower));
+    phy.Set("TxPowerEnd", DoubleValue(txPower));
+    WifiMacHelper mac;
+    mac.SetType("ns3::AdhocWifiMac");
+    wifi.SetRemoteStationManager("ns3::ConstantRateWifiManager",
+                                 "DataMode",
+                                 StringValue("DsssRate11Mbps"),
+                                 "ControlMode",
+                                 StringValue("DsssRate1Mbps"));
+    NetDeviceContainer devices = wifi.Install(phy, mac, nodes);
+
+    // ── Mobility: Random Waypoint in the area ─────────────────────────
+    MobilityHelper mobility;
+    ObjectFactory posFactory;
+    posFactory.SetTypeId("ns3::RandomRectanglePositionAllocator");
+    posFactory.Set("X", StringValue("ns3::UniformRandomVariable[Min=0.0|Max=" + std::to_string(areaX) + "]"));
+    posFactory.Set("Y", StringValue("ns3::UniformRandomVariable[Min=0.0|Max=" + std::to_string(areaY) + "]"));
+    Ptr<PositionAllocator> posAlloc = posFactory.Create()->GetObject<PositionAllocator>();
+    mobility.SetPositionAllocator(posAlloc);
+    std::ostringstream speedSs;
+    speedSs << "ns3::UniformRandomVariable[Min=" << minSpeed << "|Max=" << maxSpeed << "]";
+    std::ostringstream pauseSs;
+    pauseSs << "ns3::ConstantRandomVariable[Constant=" << pause << "]";
+    mobility.SetMobilityModel("ns3::RandomWaypointMobilityModel",
+                              "Speed", StringValue(speedSs.str()),
+                              "Pause", StringValue(pauseSs.str()),
+                              "PositionAllocator", PointerValue(posAlloc));
+    mobility.Install(nodes);
+
+    // ── Internet + AODV on every node ────────────────────────────────
+    AodvHelper aodv;
+    InternetStackHelper internet;
+    internet.SetRoutingHelper(aodv);
+    internet.Install(nodes);
+
+    Ipv4AddressHelper address;
+    address.SetBase("10.0.0.0", "255.0.0.0");
+    Ipv4InterfaceContainer interfaces = address.Assign(devices);
+
+    // ── Choose attacker nodes (deterministic given the run) ──────────
+    std::vector<uint32_t> malicious;
+    Ptr<UniformRandomVariable> pick = CreateObject<UniformRandomVariable>();
+    {
+        std::vector<uint32_t> pool(nNodes);
+        for (uint32_t i = 0; i < nNodes; ++i)
+        {
+            pool[i] = i;
+        }
+        // Fisher-Yates with the ns-3 RNG, so it is tied to --run.
+        for (uint32_t i = nNodes - 1; i > 0; --i)
+        {
+            uint32_t j = pick->GetInteger(0, i);
+            std::swap(pool[i], pool[j]);
+        }
+        for (uint32_t k = 0; k < nMalicious; ++k)
+        {
+            malicious.push_back(pool[k]);
+        }
+    }
+
+    auto attackTypeFor = [&](uint32_t /*idx*/, uint32_t k) -> std::string {
+        if (attack == "mixed")
+        {
+            static const char* types[] = {"blackhole", "grayhole", "flood"};
+            return types[k % 3];
+        }
+        return attack;
+    };
+
+    // ── Install the attacks (attack mode only) ───────────────────────
+    std::vector<Ptr<MaliciousAodv>> malObjs;
+    std::vector<Ptr<RreqFlooder>> flooders;
+    std::vector<std::string> malTypes(malicious.size());
+
+    for (uint32_t k = 0; k < malicious.size(); ++k)
+    {
+        uint32_t nodeId = malicious[k];
+        std::string type = attackTypeFor(nodeId, k);
+        malTypes[k] = type;
+        Ptr<Node> node = nodes.Get(nodeId);
+
+        if (type == "blackhole" || type == "grayhole")
+        {
+            Ptr<Ipv4> ipv4 = node->GetObject<Ipv4>();
+            Ptr<Ipv4RoutingProtocol> inner = ipv4->GetRoutingProtocol();
+            Ptr<MaliciousAodv> mal = CreateObject<MaliciousAodv>();
+            mal->SetInner(inner);
+            mal->SetMode(type == "blackhole" ? MaliciousAodv::BLACKHOLE
+                                             : MaliciousAodv::GRAYHOLE);
+            mal->SetGrayholeProb(type == "blackhole" ? 1.0 : grayholeProb);
+            mal->SetStartTime(Seconds(attackStart));
+            ipv4->SetRoutingProtocol(mal); // wrapper on top of the real AODV
+            malObjs.push_back(mal);
+        }
+        else if (type == "flood")
+        {
+            // Let the attacker exceed AODV's default RREQ rate limit so the
+            // flood is observable. NS3-VERSION: attribute path is stable.
+            Ptr<Ipv4> ipv4 = node->GetObject<Ipv4>();
+            Ptr<Ipv4RoutingProtocol> rp = ipv4->GetRoutingProtocol();
+            Ptr<aodv::RoutingProtocol> aodvRp = DynamicCast<aodv::RoutingProtocol>(rp);
+            if (aodvRp)
+            {
+                aodvRp->SetAttribute("RreqRateLimit", UintegerValue(1000));
+            }
+            Ptr<RreqFlooder> app = CreateObject<RreqFlooder>();
+            app->SetStartTime(Seconds(attackStart));
+            app->SetStopTime(Seconds(simTime));
+            node->AddApplication(app);
+            flooders.push_back(app);
+        }
+    }
+
+    // ── Legitimate CBR traffic between non-attacker nodes ────────────
+    const uint16_t sinkPort = 8000;
+    std::vector<uint32_t> honest;
+    for (uint32_t i = 0; i < nNodes; ++i)
+    {
+        if (std::find(malicious.begin(), malicious.end(), i) == malicious.end())
+        {
+            honest.push_back(i);
+        }
+    }
+    NS_ABORT_MSG_IF(honest.size() < 2, "not enough honest nodes for traffic");
+
+    Ptr<UniformRandomVariable> flowRng = CreateObject<UniformRandomVariable>();
+    for (uint32_t f = 0; f < nFlows; ++f)
+    {
+        uint32_t s = honest[flowRng->GetInteger(0, honest.size() - 1)];
+        uint32_t d = honest[flowRng->GetInteger(0, honest.size() - 1)];
+        uint32_t guard = 0;
+        while (d == s && guard++ < 10)
+        {
+            d = honest[flowRng->GetInteger(0, honest.size() - 1)];
+        }
+        if (d == s)
+        {
+            continue;
+        }
+
+        PacketSinkHelper sink("ns3::UdpSocketFactory",
+                              InetSocketAddress(Ipv4Address::GetAny(), sinkPort));
+        ApplicationContainer sinkApp = sink.Install(nodes.Get(d));
+        sinkApp.Start(Seconds(0.0));
+        sinkApp.Stop(Seconds(simTime));
+
+        OnOffHelper onoff("ns3::UdpSocketFactory",
+                          InetSocketAddress(interfaces.GetAddress(d), sinkPort));
+        onoff.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1]"));
+        onoff.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0]"));
+        onoff.SetAttribute("DataRate", DataRateValue(DataRate(dataRate)));
+        onoff.SetAttribute("PacketSize", UintegerValue(packetSize));
+        ApplicationContainer srcApp = onoff.Install(nodes.Get(s));
+        // Stagger starts so route discovery does not all fire at once.
+        srcApp.Start(Seconds(2.0 + 0.1 * f));
+        srcApp.Stop(Seconds(simTime));
+    }
+
+    // ── Energy model ─────────────────────────────────────────────────
+    ns3::energy::BasicEnergySourceHelper energyHelper;
+    energyHelper.Set("BasicEnergySourceInitialEnergyJ", DoubleValue(initEnergy));
+    ns3::energy::EnergySourceContainer sources = energyHelper.Install(nodes);
+    ns3::energy::WifiRadioEnergyModelHelper radioEnergy;
+    ns3::energy::DeviceEnergyModelContainer deviceModels =
+        radioEnergy.Install(devices, sources);
+
+    // ── Measurement hooks ────────────────────────────────────────────
+    Config::ConnectWithoutContext("/NodeList/*/$ns3::Ipv4L3Protocol/Tx",
+                                  MakeCallback(&CountRoutingOverhead));
+
+    g_mobFile.open(out + "_mobility.csv");
+    g_mobFile << "time,node,x,y,speed\n";
+    Simulator::Schedule(Seconds(0.0), &SampleMobility, nodes, Seconds(1.0), Seconds(simTime));
+
+    // Routing-table snapshots.
+    Ptr<OutputStreamWrapper> rtStream = Create<OutputStreamWrapper>(out + "_routing.txt", std::ios::out);
+    for (double t : {simTime * 0.25, simTime * 0.5, simTime * 0.9})
+    {
+        Ipv4RoutingHelper::PrintRoutingTableAllAt(Seconds(t), rtStream);
+    }
+
+    FlowMonitorHelper flowHelper;
+    Ptr<FlowMonitor> monitor = flowHelper.InstallAll();
+
+    Simulator::Stop(Seconds(simTime));
+    Simulator::Run();
+
+    // ── Metrics from FlowMonitor (data flows only) ───────────────────
+    monitor->CheckForLostPackets();
+    Ptr<Ipv4FlowClassifier> classifier =
+        DynamicCast<Ipv4FlowClassifier>(flowHelper.GetClassifier());
+    const auto& stats = monitor->GetFlowStats();
+
+    uint64_t txPackets = 0, rxPackets = 0, rxBytes = 0, lostPackets = 0;
+    double delaySum = 0.0;
+    double firstRx = simTime, lastRx = 0.0;
+    for (const auto& kv : stats)
+    {
+        Ipv4FlowClassifier::FiveTuple t = classifier->FindFlow(kv.first);
+        if (t.destinationPort != sinkPort)
+        {
+            continue; // ignore AODV control and flooder probes
+        }
+        const FlowMonitor::FlowStats& st = kv.second;
+        txPackets += st.txPackets;
+        rxPackets += st.rxPackets;
+        rxBytes += st.rxBytes;
+        lostPackets += st.lostPackets;
+        delaySum += st.delaySum.GetSeconds();
+        if (st.rxPackets > 0)
+        {
+            firstRx = std::min(firstRx, st.timeFirstRxPacket.GetSeconds());
+            lastRx = std::max(lastRx, st.timeLastRxPacket.GetSeconds());
+        }
+    }
+
+    double pdr = txPackets ? 100.0 * rxPackets / txPackets : 0.0;
+    double span = (lastRx > firstRx) ? (lastRx - firstRx) : 1.0;
+    double throughputKbps = rxBytes * 8.0 / span / 1000.0;
+    double avgDelayMs = rxPackets ? 1000.0 * delaySum / rxPackets : 0.0;
+    double nro = rxPackets ? static_cast<double>(g_overhead.ctrlPackets) / rxPackets : 0.0;
+
+    double energyConsumed = 0.0;
+    for (uint32_t i = 0; i < sources.GetN(); ++i)
+    {
+        Ptr<ns3::energy::BasicEnergySource> src =
+            DynamicCast<ns3::energy::BasicEnergySource>(sources.Get(i));
+        energyConsumed += src->GetInitialEnergy() - src->GetRemainingEnergy();
+    }
+
+    uint64_t attackerDrops = 0;
+    for (const auto& m : malObjs)
+    {
+        attackerDrops += m->GetDroppedPackets();
+    }
+    uint64_t floodProbes = 0;
+    for (const auto& f : flooders)
+    {
+        floodProbes += f->GetSentProbes();
+    }
+
+    // ── Write metrics.csv ────────────────────────────────────────────
+    {
+        std::ofstream mf(out + "_metrics.csv");
+        mf << "mode,attack,nNodes,nMalicious,run,"
+           << "tx_packets,rx_packets,lost_packets,pdr_percent,"
+           << "throughput_kbps,avg_delay_ms,ctrl_packets,ctrl_bytes,"
+           << "norm_routing_overhead,energy_consumed_J,energy_per_node_J,"
+           << "attacker_drops,flood_probes\n";
+        mf << mode << "," << (mode == "attack" ? attack : "none") << ","
+           << nNodes << "," << nMalicious << "," << run << ","
+           << txPackets << "," << rxPackets << "," << lostPackets << ","
+           << pdr << "," << throughputKbps << "," << avgDelayMs << ","
+           << g_overhead.ctrlPackets << "," << g_overhead.ctrlBytes << ","
+           << nro << "," << energyConsumed << "," << (energyConsumed / nNodes) << ","
+           << attackerDrops << "," << floodProbes << "\n";
+    }
+
+    // ── Write attacks.csv ────────────────────────────────────────────
+    {
+        std::ofstream af(out + "_attacks.csv");
+        af << "node,attack_type,start_s,dropped_packets,dropped_bytes,flood_probes\n";
+        if (mode != "attack" || malicious.empty())
+        {
+            af << "# baseline: no attacker\n";
+        }
+        size_t blackGrayIdx = 0, floodIdx = 0;
+        for (uint32_t k = 0; k < malicious.size(); ++k)
+        {
+            const std::string& type = malTypes[k];
+            af << malicious[k] << "," << type << "," << attackStart << ",";
+            if (type == "flood")
+            {
+                af << "0,0," << (floodIdx < flooders.size() ? flooders[floodIdx++]->GetSentProbes() : 0) << "\n";
+            }
+            else
+            {
+                Ptr<MaliciousAodv> m = (blackGrayIdx < malObjs.size()) ? malObjs[blackGrayIdx++] : nullptr;
+                af << (m ? m->GetDroppedPackets() : 0) << ","
+                   << (m ? m->GetDroppedBytes() : 0) << ",0\n";
+            }
+        }
+    }
+
+    monitor->SerializeToXmlFile(out + "_flowmon.xml", true, true);
+    g_mobFile.close();
+
+    Simulator::Destroy();
+
+    std::cout << "[done] mode=" << mode << " attack=" << (mode == "attack" ? attack : "none")
+              << " PDR=" << pdr << "% TP=" << throughputKbps << "kbps delay=" << avgDelayMs
+              << "ms NRO=" << nro << " energy=" << energyConsumed << "J drops=" << attackerDrops
+              << "\n";
+    return 0;
+}
