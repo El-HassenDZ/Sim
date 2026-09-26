@@ -54,6 +54,9 @@ class BlackholeAodv : public Ipv4RoutingProtocol
     uint64_t GetForgedRreps() const;
     uint64_t GetDroppedPackets() const;
     uint64_t GetDroppedBytes() const;
+    // Diagnostics for why forged_rreps may be zero:
+    uint64_t GetRreqSeen() const;      ///< RREQs actually received on a socket
+    uint64_t GetBindFailures() const;  ///< sockets that failed to bind
 
     // ── Ipv4RoutingProtocol ───────────────────────────────────────
     Ptr<Ipv4Route> RouteOutput(Ptr<Packet> p,
@@ -100,6 +103,8 @@ class BlackholeAodv : public Ipv4RoutingProtocol
     uint64_t m_forgedRreps;
     uint64_t m_droppedPackets;
     uint64_t m_droppedBytes;
+    uint64_t m_rreqSeen;
+    uint64_t m_bindFailures;
 
     static const uint32_t AODV_PORT = 654;
     static const uint32_t FORGED_SEQNO = 0x7FFFFFFF; // very fresh

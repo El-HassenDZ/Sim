@@ -35,7 +35,9 @@ BlackholeAodv::BlackholeAodv()
     : m_startTime(Seconds(0)),
       m_forgedRreps(0),
       m_droppedPackets(0),
-      m_droppedBytes(0)
+      m_droppedBytes(0),
+      m_rreqSeen(0),
+      m_bindFailures(0)
 {
 }
 
@@ -65,6 +67,18 @@ uint64_t
 BlackholeAodv::GetDroppedBytes() const
 {
     return m_droppedBytes;
+}
+
+uint64_t
+BlackholeAodv::GetRreqSeen() const
+{
+    return m_rreqSeen;
+}
+
+uint64_t
+BlackholeAodv::GetBindFailures() const
+{
+    return m_bindFailures;
 }
 
 void
@@ -206,7 +220,11 @@ BlackholeAodv::NotifyInterfaceUp(uint32_t interface)
     NS_ASSERT(socket);
     socket->SetRecvCallback(MakeCallback(&BlackholeAodv::RecvAodv, this));
     socket->BindToNetDevice(m_ipv4->GetNetDevice(interface));
-    socket->Bind(InetSocketAddress(iface.GetLocal(), AODV_PORT));
+    if (socket->Bind(InetSocketAddress(iface.GetLocal(), AODV_PORT)) != 0)
+    {
+        m_bindFailures++;
+        NS_LOG_WARN("BlackholeAodv unicast bind failed on " << iface.GetLocal());
+    }
     socket->SetAllowBroadcast(true);
     socket->SetIpRecvTtl(true);
     m_socketAddresses[socket] = iface;
@@ -215,7 +233,11 @@ BlackholeAodv::NotifyInterfaceUp(uint32_t interface)
     NS_ASSERT(bcast);
     bcast->SetRecvCallback(MakeCallback(&BlackholeAodv::RecvAodv, this));
     bcast->BindToNetDevice(m_ipv4->GetNetDevice(interface));
-    bcast->Bind(InetSocketAddress(iface.GetBroadcast(), AODV_PORT));
+    if (bcast->Bind(InetSocketAddress(iface.GetBroadcast(), AODV_PORT)) != 0)
+    {
+        m_bindFailures++;
+        NS_LOG_WARN("BlackholeAodv broadcast bind failed on " << iface.GetBroadcast());
+    }
     bcast->SetAllowBroadcast(true);
     bcast->SetIpRecvTtl(true);
     m_socketBroadcastAddresses[bcast] = iface;
@@ -315,6 +337,7 @@ BlackholeAodv::RecvAodv(Ptr<Socket> socket)
 
     if (tHeader.Get() == aodv::AODVTYPE_RREQ)
     {
+        m_rreqSeen++;
         if (Simulator::Now() < m_startTime)
         {
             return; // attack not started: stay silent (do not even reply)
