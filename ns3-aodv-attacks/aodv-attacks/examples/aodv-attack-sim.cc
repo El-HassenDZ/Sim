@@ -146,14 +146,14 @@ main(int argc, char* argv[])
     double simTime = 100.0;
     double areaX = 800.0;   // tuned for a healthy baseline (see config.py rationale)
     double areaY = 800.0;
-    double minSpeed = 0.5;
-    double maxSpeed = 1.5;   // near-static: targets baseline PDR >= 95% (multi-hop kept)
-    double pause = 30.0;     // long pauses -> very stable topology
+    double minSpeed = 0.1;
+    double maxSpeed = 0.5;   // near-static, tuned for baseline PDR >= 95%
+    double pause = 60.0;     // long pauses -> very stable topology
     uint32_t nFlows = 10;
     std::string dataRate = "16kbps";
     uint32_t packetSize = 512;
     double txPower = 18.0; // dBm; used by the energy model
-    double commRange = 250.0; // m; hard range for the 'range' propagation model
+    double commRange = 350.0; // m; ~2-hop paths at 800x800 -> higher PDR, multi-hop
     std::string propagation = "range"; // range | logdistance
     double initEnergy = 100.0; // Joules
     double attackStart = 20.0;

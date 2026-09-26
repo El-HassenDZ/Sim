@@ -26,11 +26,12 @@ SCENARIO = {
     "simTime": 100.0,
     "areaX": 800.0,        # was 1000: smaller field -> shorter paths (fewer hops
     "areaY": 800.0,        #   -> higher PDR, lower delay) while staying multi-hop
-    "minSpeed": 0.5,       # near-static: link breaks are the main PDR sink, so
-    "maxSpeed": 1.5,       #   low speed (avg ~1 m/s) targets baseline PDR >= 95%
-    "pause": 30.0,         #   long pauses -> very stable topology. Density/range
-                           #   are unchanged, so routes stay multi-hop (~5 hops):
-                           #   this raises PDR without collapsing to single hop.
+    "minSpeed": 0.1,       # near-static + short paths, tuned for baseline
+    "maxSpeed": 0.5,       #   PDR >= 95%. The 10-run campaign showed low mobility
+    "pause": 60.0,         #   ALONE gave only 89.6%±5: at 4-5 hops the per-hop
+                           #   loss and MAC contention dominate. commRange 250->350
+                           #   below shortens paths to ~2 hops (still multi-hop),
+                           #   which is the lever that lifts PDR.
     "nFlows": 10,          # 10 x 16 kbps = 160 kbps offered on an 11 Mbps channel
     "dataRate": "16kbps",  #   -> light load, negligible MAC contention
     "packetSize": 512,
@@ -38,8 +39,9 @@ SCENARIO = {
     "propagation": "range",# 'range' = deterministic disk of radius commRange, so
                            #   connectivity == the graph check_connectivity.py
                            #   validates; 'logdistance' for realism (range varies)
-    "commRange": 250.0,    # m; 50 nodes / 800x800 at 250 m = 98.6% connected
-                           #   (verified by runner/check_connectivity.py)
+    "commRange": 350.0,    # m; 50 nodes / 800x800 at 350 m = 100% connected,
+                           #   ~2-hop paths (verified by check_connectivity.py).
+                           #   Shorter paths -> higher PDR while staying multi-hop.
     "initEnergy": 100.0,   # J
     "attackStart": 20.0,   # attacks off for the first 20 s (baseline warm-up)
 }
