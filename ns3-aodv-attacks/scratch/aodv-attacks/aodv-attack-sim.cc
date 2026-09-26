@@ -23,6 +23,7 @@
  * it was NOT compiled by the author (no ns-3 build available). Version
  * sensitive spots are flagged with "NS3-VERSION" comments.
  */
+#include "blackhole-aodv.h"
 #include "malicious-aodv.h"
 #include "rreq-flooder.h"
 
@@ -247,6 +248,7 @@ main(int argc, char* argv[])
 
     // ── Install the attacks (attack mode only) ───────────────────────
     std::vector<Ptr<MaliciousAodv>> malObjs;
+    std::vector<Ptr<BlackholeAodv>> activeBh;
     std::vector<Ptr<RreqFlooder>> flooders;
     std::vector<std::string> malTypes(malicious.size());
 
@@ -269,6 +271,15 @@ main(int argc, char* argv[])
             mal->SetStartTime(Seconds(attackStart));
             ipv4->SetRoutingProtocol(mal); // wrapper on top of the real AODV
             malObjs.push_back(mal);
+        }
+        else if (type == "blackhole_rrep")
+        {
+            // ACTIVE blackhole: replace AODV entirely with the forging agent.
+            Ptr<Ipv4> ipv4 = node->GetObject<Ipv4>();
+            Ptr<BlackholeAodv> bh = CreateObject<BlackholeAodv>();
+            bh->SetStartTime(Seconds(attackStart));
+            ipv4->SetRoutingProtocol(bh); // node no longer runs real AODV
+            activeBh.push_back(bh);
         }
         else if (type == "flood")
         {
@@ -411,6 +422,12 @@ main(int argc, char* argv[])
     {
         attackerDrops += m->GetDroppedPackets();
     }
+    uint64_t forgedRreps = 0;
+    for (const auto& b : activeBh)
+    {
+        attackerDrops += b->GetDroppedPackets();
+        forgedRreps += b->GetForgedRreps();
+    }
     uint64_t floodProbes = 0;
     for (const auto& f : flooders)
     {
@@ -424,38 +441,46 @@ main(int argc, char* argv[])
            << "tx_packets,rx_packets,lost_packets,pdr_percent,"
            << "throughput_kbps,avg_delay_ms,ctrl_packets,ctrl_bytes,"
            << "norm_routing_overhead,energy_consumed_J,energy_per_node_J,"
-           << "attacker_drops,flood_probes\n";
+           << "attacker_drops,forged_rreps,flood_probes\n";
         mf << mode << "," << (mode == "attack" ? attack : "none") << ","
            << nNodes << "," << nMalicious << "," << run << ","
            << txPackets << "," << rxPackets << "," << lostPackets << ","
            << pdr << "," << throughputKbps << "," << avgDelayMs << ","
            << g_overhead.ctrlPackets << "," << g_overhead.ctrlBytes << ","
            << nro << "," << energyConsumed << "," << (energyConsumed / nNodes) << ","
-           << attackerDrops << "," << floodProbes << "\n";
+           << attackerDrops << "," << forgedRreps << "," << floodProbes << "\n";
     }
 
     // ── Write attacks.csv ────────────────────────────────────────────
     {
         std::ofstream af(out + "_attacks.csv");
-        af << "node,attack_type,start_s,dropped_packets,dropped_bytes,flood_probes\n";
+        af << "node,attack_type,start_s,dropped_packets,dropped_bytes,forged_rreps,flood_probes\n";
         if (mode != "attack" || malicious.empty())
         {
             af << "# baseline: no attacker\n";
         }
-        size_t blackGrayIdx = 0, floodIdx = 0;
+        size_t blackGrayIdx = 0, activeIdx = 0, floodIdx = 0;
         for (uint32_t k = 0; k < malicious.size(); ++k)
         {
             const std::string& type = malTypes[k];
             af << malicious[k] << "," << type << "," << attackStart << ",";
             if (type == "flood")
             {
-                af << "0,0," << (floodIdx < flooders.size() ? flooders[floodIdx++]->GetSentProbes() : 0) << "\n";
+                af << "0,0,0,"
+                   << (floodIdx < flooders.size() ? flooders[floodIdx++]->GetSentProbes() : 0) << "\n";
+            }
+            else if (type == "blackhole_rrep")
+            {
+                Ptr<BlackholeAodv> b = (activeIdx < activeBh.size()) ? activeBh[activeIdx++] : nullptr;
+                af << (b ? b->GetDroppedPackets() : 0) << ","
+                   << (b ? b->GetDroppedBytes() : 0) << ","
+                   << (b ? b->GetForgedRreps() : 0) << ",0\n";
             }
             else
             {
                 Ptr<MaliciousAodv> m = (blackGrayIdx < malObjs.size()) ? malObjs[blackGrayIdx++] : nullptr;
                 af << (m ? m->GetDroppedPackets() : 0) << ","
-                   << (m ? m->GetDroppedBytes() : 0) << ",0\n";
+                   << (m ? m->GetDroppedBytes() : 0) << ",0,0\n";
             }
         }
     }

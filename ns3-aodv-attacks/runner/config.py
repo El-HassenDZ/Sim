@@ -36,7 +36,13 @@ SCENARIO = {
 }
 
 # Attack configuration for the attacked runs.
-ATTACKS = ["blackhole", "grayhole", "flood", "mixed"]
+#   blackhole      : data-plane dropping (routing wrapper, malicious-aodv)
+#   blackhole_rrep : ACTIVE blackhole that forges RREPs to attract traffic,
+#                    then drops it (derived agent, blackhole-aodv)
+#   grayhole       : probabilistic data-plane dropping
+#   flood          : RREQ flooding
+#   mixed          : blackhole + grayhole + flood spread over the attackers
+ATTACKS = ["blackhole", "blackhole_rrep", "grayhole", "flood", "mixed"]
 N_MALICIOUS = 5            # 10 % of 50 nodes
 GRAYHOLE_PROB = 0.5
 

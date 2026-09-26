@@ -13,11 +13,12 @@ itself (`src/aodv`) is **never modified**: the attacks are a routing
 
 ## What is (and is not) modelled
 
-| Attack | How, without touching src/aodv | Honest limitation |
+| Attack (`--attack=`) | How, outside src/aodv | Honest limitation |
 |---|---|---|
-| **Blackhole** | `MaliciousAodv` wraps the node's real AODV; it delegates all control/routing to AODV (so the node keeps a normal table and forwards RREQ), but drops every **transit data** packet it is asked to forward. | Data-plane dropping only. It does **not** forge RREPs with an inflated sequence number to *actively* attract traffic — that needs editing `src/aodv`. The node attracts routes only as far as normal AODV puts it on a path. |
-| **Grayhole** | Same wrapper, drops forwarded data with probability `grayholeProb`. | Same as above. |
-| **RREQ flood** | `RreqFlooder` app sends UDP to a stream of unassigned addresses, so the attacker's own AODV emits a genuine RREQ per new destination. The scenario raises the attacker's `RreqRateLimit` so the flood is observable. | Induces real RREQs through AODV's state machine; it does not fabricate RREQ packets on the wire. |
+| **`blackhole`** | `MaliciousAodv` wraps the node's real AODV; it delegates all control/routing to AODV (so the node keeps a normal table and forwards RREQ), but drops every **transit data** packet it is asked to forward. | Data-plane dropping only. It does **not** forge RREPs — the node attracts routes only as far as normal AODV puts it on a path. |
+| **`blackhole_rrep`** | **Active blackhole.** `BlackholeAodv` is a self-contained malicious routing agent that runs *instead of* AODV on the attacker. It reuses only the **public** AODV packet headers (`ns3/aodv-packet.h`) to answer every RREQ it hears with a **forged RREP** (destination sequence number ≈ 2³¹, hop count 1), so honest AODV prefers it and routes through it; it then drops all transit data. | A derived agent, **not** a copy of `src/aodv` and not a change to it. It only wins route discovery and drops; it has no RERR/HELLO/expanding-ring logic (a blackhole does not need them). Reviewed statically only. |
+| **`grayhole`** | Same wrapper as `blackhole`, drops forwarded data with probability `grayholeProb`. | Data-plane dropping only. |
+| **`flood`** | `RreqFlooder` app sends UDP to a stream of unassigned addresses, so the attacker's own AODV emits a genuine RREQ per new destination. The scenario raises the attacker's `RreqRateLimit` so the flood is observable. | Induces real RREQs through AODV's state machine; it does not fabricate RREQ packets on the wire. |
 
 Why the wrapper approach is faithful where it counts: the malicious node
 still runs unmodified AODV for everything except the final forwarding
@@ -31,7 +32,8 @@ forwarding path.
 ```
 scratch/aodv-attacks/          # dropped into <ns-3.48>/scratch/
   aodv-attack-sim.cc           # main scenario, both modes, all measurements
-  malicious-aodv.{h,cc}        # blackhole / grayhole routing wrapper
+  malicious-aodv.{h,cc}        # blackhole / grayhole routing wrapper (data-plane)
+  blackhole-aodv.{h,cc}        # ACTIVE blackhole: forged-RREP agent (derived, outside src/aodv)
   rreq-flooder.{h,cc}          # RREQ-flooding application
 runner/
   config.py                    # scenario parameters (one source of truth)
