@@ -168,13 +168,11 @@ void
 MaliciousAodv::SetIpv4(Ptr<Ipv4> ipv4)
 {
     m_ipv4 = ipv4;
-    // The inner AODV had SetIpv4 called at install time; calling it again
-    // with the same pointer is safe and keeps both consistent if the L3
-    // protocol re-sets the top-level routing protocol.
-    if (m_inner)
-    {
-        m_inner->SetIpv4(ipv4);
-    }
+    // Do NOT forward to m_inner->SetIpv4(): the inner aodv::RoutingProtocol
+    // already had its Ipv4 set during InternetStackHelper::Install, and
+    // aodv::RoutingProtocol::SetIpv4 asserts (!m_ipv4), so a second call
+    // aborts the run. The wrapper only needs m_ipv4 for its own IsLocal
+    // check; the inner keeps the pointer it was given at install.
 }
 
 void

@@ -88,8 +88,14 @@ class BlackholeAodv : public Ipv4RoutingProtocol
     Ptr<Ipv4Route> LoopbackRoute(const Ipv4Header& header, Ptr<NetDevice> oif) const;
 
     Ptr<Ipv4> m_ipv4;
-    // recv socket (bound to iface addr) -> its interface address
+    // Unicast recv/send sockets (bound to the interface address) and the
+    // subnet-broadcast recv sockets, mirroring aodv::RoutingProtocol. AODV
+    // sends RREQ to the subnet broadcast, so without the broadcast socket
+    // the attacker never hears any RREQ and forges no reply.
     std::map<Ptr<Socket>, Ipv4InterfaceAddress> m_socketAddresses;
+    std::map<Ptr<Socket>, Ipv4InterfaceAddress> m_socketBroadcastAddresses;
+    /// Unicast socket bound to a given interface address (for sending RREPs).
+    Ptr<Socket> UnicastSocketFor(Ipv4Address ifaceAddr) const;
     Time m_startTime;
     uint64_t m_forgedRreps;
     uint64_t m_droppedPackets;

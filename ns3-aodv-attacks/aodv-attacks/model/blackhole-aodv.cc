@@ -194,10 +194,15 @@ BlackholeAodv::NotifyInterfaceUp(uint32_t interface)
         }
     }
 
-    // One socket bound to the interface address, listening on the AODV port,
-    // mirroring how aodv::RoutingProtocol sets up its receive sockets.
-    Ptr<Socket> socket = Socket::CreateSocket(m_ipv4->GetObject<Node>(),
-                                              UdpSocketFactory::GetTypeId());
+    // Two sockets per interface, exactly like aodv::RoutingProtocol:
+    //  (1) a unicast socket bound to the interface address, and
+    //  (2) a socket bound to the subnet broadcast address.
+    // AODV floods RREQ to the subnet broadcast, so (2) is what actually
+    // receives route requests; binding only (1) makes the attacker deaf to
+    // RREQ and it forges nothing (observed: forged_rreps=0).
+    Ptr<Node> node = m_ipv4->GetObject<Node>();
+
+    Ptr<Socket> socket = Socket::CreateSocket(node, UdpSocketFactory::GetTypeId());
     NS_ASSERT(socket);
     socket->SetRecvCallback(MakeCallback(&BlackholeAodv::RecvAodv, this));
     socket->BindToNetDevice(m_ipv4->GetNetDevice(interface));
@@ -205,6 +210,28 @@ BlackholeAodv::NotifyInterfaceUp(uint32_t interface)
     socket->SetAllowBroadcast(true);
     socket->SetIpRecvTtl(true);
     m_socketAddresses[socket] = iface;
+
+    Ptr<Socket> bcast = Socket::CreateSocket(node, UdpSocketFactory::GetTypeId());
+    NS_ASSERT(bcast);
+    bcast->SetRecvCallback(MakeCallback(&BlackholeAodv::RecvAodv, this));
+    bcast->BindToNetDevice(m_ipv4->GetNetDevice(interface));
+    bcast->Bind(InetSocketAddress(iface.GetBroadcast(), AODV_PORT));
+    bcast->SetAllowBroadcast(true);
+    bcast->SetIpRecvTtl(true);
+    m_socketBroadcastAddresses[bcast] = iface;
+}
+
+Ptr<Socket>
+BlackholeAodv::UnicastSocketFor(Ipv4Address ifaceAddr) const
+{
+    for (const auto& kv : m_socketAddresses)
+    {
+        if (kv.second.GetLocal() == ifaceAddr)
+        {
+            return kv.first;
+        }
+    }
+    return nullptr;
 }
 
 void
@@ -216,16 +243,19 @@ BlackholeAodv::NotifyInterfaceDown(uint32_t interface)
         return;
     }
     Ipv4InterfaceAddress iface = m_ipv4->GetAddress(interface, 0);
-    for (auto it = m_socketAddresses.begin(); it != m_socketAddresses.end();)
+    for (auto* m : {&m_socketAddresses, &m_socketBroadcastAddresses})
     {
-        if (it->second.GetLocal() == iface.GetLocal())
+        for (auto it = m->begin(); it != m->end();)
         {
-            it->first->Close();
-            it = m_socketAddresses.erase(it);
-        }
-        else
-        {
-            ++it;
+            if (it->second.GetLocal() == iface.GetLocal())
+            {
+                it->first->Close();
+                it = m->erase(it);
+            }
+            else
+            {
+                ++it;
+            }
         }
     }
 }
@@ -256,12 +286,23 @@ BlackholeAodv::RecvAodv(Ptr<Socket> socket)
     InetSocketAddress inet = InetSocketAddress::ConvertFrom(sourceAddress);
     Ipv4Address sender = inet.GetIpv4();
 
-    auto it = m_socketAddresses.find(socket);
-    if (it == m_socketAddresses.end())
+    // The RREQ arrives on the subnet-broadcast socket; the unicast socket
+    // hears RREPs. Accept from either and recover the interface.
+    Ipv4Address ifaceAddr;
+    auto itU = m_socketAddresses.find(socket);
+    if (itU != m_socketAddresses.end())
     {
-        return;
+        ifaceAddr = itU->second.GetLocal();
     }
-    Ipv4Address ifaceAddr = it->second.GetLocal();
+    else
+    {
+        auto itB = m_socketBroadcastAddresses.find(socket);
+        if (itB == m_socketBroadcastAddresses.end())
+        {
+            return;
+        }
+        ifaceAddr = itB->second.GetLocal();
+    }
 
     // Parse the AODV type header. NS3-VERSION: TypeHeader::Get() returns the
     // MessageType in ns-3.48; older trees used GetType().
@@ -280,9 +321,13 @@ BlackholeAodv::RecvAodv(Ptr<Socket> socket)
         }
         aodv::RreqHeader rreq;
         packet->RemoveHeader(rreq);
-        // Forge a reply claiming the freshest one-hop route to the target.
-        SendForgedReply(socket, rreq.GetDst(), rreq.GetDstSeqno(),
-                        rreq.GetOrigin(), sender, ifaceAddr);
+        // Reply on the unicast socket of the interface that heard the RREQ.
+        Ptr<Socket> sendSock = UnicastSocketFor(ifaceAddr);
+        if (sendSock)
+        {
+            SendForgedReply(sendSock, rreq.GetDst(), rreq.GetDstSeqno(),
+                            rreq.GetOrigin(), sender, ifaceAddr);
+        }
     }
     // RREP/RERR/HELLO are ignored: a blackhole only needs to answer RREQs.
 }
