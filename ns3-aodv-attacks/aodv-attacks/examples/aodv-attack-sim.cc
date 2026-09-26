@@ -146,9 +146,9 @@ main(int argc, char* argv[])
     double simTime = 100.0;
     double areaX = 800.0;   // tuned for a healthy baseline (see config.py rationale)
     double areaY = 800.0;
-    double minSpeed = 1.0;
-    double maxSpeed = 3.0;   // lower mobility -> fewer route breaks -> higher PDR
-    double pause = 10.0;     // longer pauses -> more stable topology
+    double minSpeed = 0.5;
+    double maxSpeed = 1.5;   // near-static: targets baseline PDR >= 95% (multi-hop kept)
+    double pause = 30.0;     // long pauses -> very stable topology
     uint32_t nFlows = 10;
     std::string dataRate = "16kbps";
     uint32_t packetSize = 512;
