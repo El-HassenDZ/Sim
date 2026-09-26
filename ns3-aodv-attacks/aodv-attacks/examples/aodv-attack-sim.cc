@@ -42,6 +42,8 @@
 
 #include <fstream>
 #include <map>
+#include <set>
+#include <utility>
 #include <vector>
 
 using namespace ns3;
@@ -340,7 +342,9 @@ main(int argc, char* argv[])
     }
     NS_ABORT_MSG_IF(honest.size() < 2, "not enough honest nodes for traffic");
 
+    // Pick the (src, dst) pairs first.
     Ptr<UniformRandomVariable> flowRng = CreateObject<UniformRandomVariable>();
+    std::vector<std::pair<uint32_t, uint32_t>> flows;
     for (uint32_t f = 0; f < nFlows; ++f)
     {
         uint32_t s = honest[flowRng->GetInteger(0, honest.size() - 1)];
@@ -350,17 +354,34 @@ main(int argc, char* argv[])
         {
             d = honest[flowRng->GetInteger(0, honest.size() - 1)];
         }
-        if (d == s)
+        if (d != s)
         {
-            continue;
+            flows.emplace_back(s, d);
         }
+    }
 
-        PacketSinkHelper sink("ns3::UdpSocketFactory",
-                              InetSocketAddress(Ipv4Address::GetAny(), sinkPort));
-        ApplicationContainer sinkApp = sink.Install(nodes.Get(d));
-        sinkApp.Start(Seconds(0.0));
-        sinkApp.Stop(Seconds(simTime));
+    // One PacketSink per DISTINCT destination node (binding two sinks to the
+    // same node:port aborts with "Failed to bind socket"). A single sink on
+    // port 8000 receives every flow addressed to that node; FlowMonitor still
+    // separates the flows by their 5-tuple.
+    std::set<uint32_t> sinkNodes;
+    for (const auto& fl : flows)
+    {
+        if (sinkNodes.insert(fl.second).second)
+        {
+            PacketSinkHelper sink("ns3::UdpSocketFactory",
+                                  InetSocketAddress(Ipv4Address::GetAny(), sinkPort));
+            ApplicationContainer sinkApp = sink.Install(nodes.Get(fl.second));
+            sinkApp.Start(Seconds(0.0));
+            sinkApp.Stop(Seconds(simTime));
+        }
+    }
 
+    // One CBR source per flow.
+    for (uint32_t f = 0; f < flows.size(); ++f)
+    {
+        uint32_t s = flows[f].first;
+        uint32_t d = flows[f].second;
         OnOffHelper onoff("ns3::UdpSocketFactory",
                           InetSocketAddress(interfaces.GetAddress(d), sinkPort));
         onoff.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1]"));
