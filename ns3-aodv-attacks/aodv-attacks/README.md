@@ -4,7 +4,7 @@ An ns-3.48 project that simulates an **AODV** MANET in two modes — a clean
 **baseline** (no attacker) and an **attacked** run — and writes the metrics,
 routing tables, mobility trace and attack log for both. The AODV protocol
 itself (`src/aodv`) is **never modified**: the attacks are a routing
-*wrapper* and an *application* that live in `scratch/`.
+*wrapper* and an *application* packaged as a `contrib` module.
 
 > **Status: statically reviewed, NOT compiled.** ns-3.48 was not available
 > to the author, so this code has not been built or run. Treat it as a
@@ -27,32 +27,65 @@ link breaks behave exactly as ns-3's AODV — only the data it should relay
 disappears. That is the defining behaviour of a blackhole/grayhole on the
 forwarding path.
 
-## Layout
+## Layout — a standard ns-3 `contrib` module
+
+This whole folder is the module `aodv-attacks`. Drop it into
+`<ns-3.48>/contrib/aodv-attacks/`.
 
 ```
-scratch/aodv-attacks/          # dropped into <ns-3.48>/scratch/
-  aodv-attack-sim.cc           # main scenario, both modes, all measurements
-  malicious-aodv.{h,cc}        # blackhole / grayhole routing wrapper (data-plane)
-  blackhole-aodv.{h,cc}        # ACTIVE blackhole: forged-RREP agent (derived, outside src/aodv)
-  rreq-flooder.{h,cc}          # RREQ-flooding application
-runner/
-  config.py                    # scenario parameters (one source of truth)
-  run_experiment.py            # build + run baseline & attacks, aggregate, compare
-  parse_flowmon.py             # independent cross-check from FlowMonitor XML
-outputs/                       # generated
+aodv-attacks/                    # -> <ns-3.48>/contrib/aodv-attacks/
+  CMakeLists.txt                 # build_lib() : the module library
+  model/
+    malicious-aodv.{h,cc}        # blackhole / grayhole routing wrapper (data-plane)
+    blackhole-aodv.{h,cc}        # ACTIVE blackhole: forged-RREP agent (derived, outside src/aodv)
+    rreq-flooder.{h,cc}          # RREQ-flooding application
+  examples/
+    CMakeLists.txt               # build_lib_example()
+    aodv-attack-sim.cc           # main scenario, both modes, all measurements
+  runner/                        # Python orchestration (ignored by ns-3's build)
+    config.py                    # scenario parameters (one source of truth)
+    run_experiment.py            # install + build + run baseline & attacks, aggregate
+    parse_flowmon.py             # independent cross-check from FlowMonitor XML
+    check_connectivity.py        # offline connectivity check (no ns-3)
+  README.md
 ```
 
-## Build & run
+## Install, build & run
+
+### One-time install into your ns-3.48 tree
 
 ```bash
-# 1. Point the runner at your ns-3.48 checkout (the one with ./ns3 and src/aodv).
-python3 runner/run_experiment.py --ns3-dir /path/to/ns-3.48 --runs 10
+# copy the module into contrib/ (or let the runner do it with --install)
+cp -r aodv-attacks /path/to/ns-3.48/contrib/
 
-# or by hand, one run:
-cp -r scratch/aodv-attacks /path/to/ns-3.48/scratch/
 cd /path/to/ns-3.48
-./ns3 run "aodv-attacks --mode=baseline --out=base"
-./ns3 run "aodv-attacks --mode=attack --attack=blackhole --nMalicious=5 --out=bh"
+./ns3 configure --enable-examples          # examples must be enabled
+./ns3 build aodv-attack-sim
+```
+
+### Run one simulation by hand
+
+```bash
+cd /path/to/ns-3.48
+# baseline (no attack):
+./ns3 run "aodv-attack-sim --mode=baseline --out=base"
+# active RREP-forging blackhole, 5 attackers:
+./ns3 run "aodv-attack-sim --mode=attack --attack=blackhole_rrep --nMalicious=5 --out=bh"
+# other attacks: --attack=blackhole | grayhole | flood | mixed
+```
+
+Output files are written to the `--out` prefix (use an absolute path to
+control where). `./ns3 run "aodv-attack-sim --PrintHelp"` lists every
+parameter (nNodes, area, speeds, propagation, commRange, dataRate, …).
+
+### Full campaign (baseline + all attacks, N repetitions, aggregated)
+
+```bash
+# from inside the module's runner/ (or anywhere):
+python3 aodv-attacks/runner/run_experiment.py \
+        --ns3-dir /path/to/ns-3.48 --install --configure --runs 10
+# subsequent runs (module already installed & configured):
+python3 aodv-attacks/runner/run_experiment.py --ns3-dir /path/to/ns-3.48 --runs 10
 ```
 
 `run_experiment.py` runs the baseline and each attack for `--runs`

@@ -17,15 +17,17 @@
  *   <out>_attacks.csv    attacker id, type, start, dropped/sent counters
  *   <out>_flowmon.xml    raw FlowMonitor dump (audit)
  *
- * BUILD: drop scratch/aodv-attacks/ into an ns-3.48 tree and
- *        ./ns3 run "aodv-attacks --mode=baseline --out=outputs/base"
+ * BUILD: this is an example of the contrib module aodv-attacks. Place the
+ *        module at <ns-3.48>/contrib/aodv-attacks/, then:
+ *          ./ns3 configure --enable-examples
+ *          ./ns3 build aodv-attack-sim
+ *          ./ns3 run "aodv-attack-sim --mode=baseline --out=base"
  * This code was written against the ns-3.48 API and reviewed statically;
  * it was NOT compiled by the author (no ns-3 build available). Version
  * sensitive spots are flagged with "NS3-VERSION" comments.
  */
-#include "blackhole-aodv.h"
-#include "malicious-aodv.h"
-#include "rreq-flooder.h"
+// This module's public classes (MaliciousAodv, BlackholeAodv, RreqFlooder).
+#include "ns3/aodv-attacks-module.h"
 
 #include "ns3/aodv-module.h"
 #include "ns3/applications-module.h"

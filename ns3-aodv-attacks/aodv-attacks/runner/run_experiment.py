@@ -2,18 +2,22 @@
 """
 runner/run_experiment.py
 ========================
-Drive the ns-3.48 AODV attack scenario: install the scratch program into an
-ns-3 tree, build it, run the baseline and each attack for N repetitions,
-then aggregate every per-run *_metrics.csv into one summary with mean and
-95 % confidence intervals, and print a baseline-vs-attack comparison.
+Drive the ns-3.48 AODV attack scenario (contrib module): optionally install
+the module into <ns-3>/contrib/, build it, run the baseline and each attack
+for N repetitions, then aggregate every per-run *_metrics.csv into one summary
+with mean and 95 % confidence intervals, and print a baseline-vs-attack
+comparison.
 
 This runner does NOT simulate anything itself: all numbers come from ns-3.
 It only orchestrates and aggregates. It therefore needs a working ns-3.48
-build environment (a checkout with ./ns3).
+build environment (a checkout with ./ns3) configured with examples enabled.
 
 Usage:
-    python3 run_experiment.py --ns3-dir /path/to/ns-3.48
-    python3 run_experiment.py --ns3-dir /path/to/ns-3.48 --runs 5 --attacks blackhole,flood
+    # once, to place the module and configure:
+    python3 run_experiment.py --ns3-dir /path/to/ns-3.48 --install --configure
+    # then run:
+    python3 run_experiment.py --ns3-dir /path/to/ns-3.48 --runs 10
+    python3 run_experiment.py --ns3-dir /path/to/ns-3.48 --attacks blackhole,blackhole_rrep
     python3 run_experiment.py --ns3-dir /path/to/ns-3.48 --no-build   # reuse last build
 """
 
@@ -32,7 +36,9 @@ sys.path.insert(0, HERE)
 
 import config  # noqa: E402
 
-SCRATCH_SRC = os.path.join(PROJECT, "scratch", config.TARGET)
+# PROJECT is the module root (contains CMakeLists.txt, model/, examples/).
+MODULE_DIR = PROJECT
+MODULE_NAME = os.path.basename(PROJECT)  # "aodv-attacks"
 
 
 def t_quantile_95(df):
@@ -51,25 +57,32 @@ def t_quantile_95(df):
     return table[lo]
 
 
-def install_scratch(ns3_dir):
-    dst = os.path.join(ns3_dir, "scratch", config.TARGET)
-    if os.path.abspath(dst) == os.path.abspath(SCRATCH_SRC):
+def install_module(ns3_dir):
+    """Copy this module into <ns-3>/contrib/aodv-attacks (skip runner/)."""
+    dst = os.path.join(ns3_dir, "contrib", MODULE_NAME)
+    if os.path.abspath(dst) == os.path.abspath(MODULE_DIR):
         return
-    if os.path.islink(dst) or os.path.isfile(dst):
-        os.remove(dst)
-    elif os.path.isdir(dst):
+    if os.path.isdir(dst):
         shutil.rmtree(dst)
-    shutil.copytree(SCRATCH_SRC, dst)
-    print(f"[install] copied scratch/{config.TARGET} -> {dst}")
+    shutil.copytree(MODULE_DIR, dst,
+                    ignore=shutil.ignore_patterns("runner", "outputs", "__pycache__",
+                                                  "*.pyc", ".git"))
+    print(f"[install] copied module -> {dst}")
+
+
+def configure(ns3_dir):
+    print("[configure] ./ns3 configure --enable-examples")
+    subprocess.run(["./ns3", "configure", "--enable-examples"], cwd=ns3_dir, check=True)
 
 
 def build(ns3_dir):
-    print("[build] ./ns3 build")
+    print(f"[build] ./ns3 build {config.TARGET}")
     subprocess.run(["./ns3", "build", config.TARGET], cwd=ns3_dir, check=True)
 
 
 def run_one(ns3_dir, out_prefix, extra):
     args = " ".join(f"--{k}={v}" for k, v in extra.items())
+    # ns-3 example run: ./ns3 run "aodv-attack-sim --mode=... --out=..."
     cmd = f'{config.TARGET} {args} --out={out_prefix}'
     print(f"[run] {args}")
     subprocess.run(["./ns3", "run", cmd], cwd=ns3_dir, check=True)
@@ -145,8 +158,11 @@ def main():
     ap.add_argument("--runs", type=int, default=config.N_RUNS)
     ap.add_argument("--attacks", type=str, default=",".join(config.ATTACKS))
     ap.add_argument("--out-dir", type=str, default=os.path.join(PROJECT, "outputs"))
+    ap.add_argument("--install", action="store_true",
+                    help="copy this module into <ns-3>/contrib/ before building")
+    ap.add_argument("--configure", action="store_true",
+                    help="run ./ns3 configure --enable-examples (needed once)")
     ap.add_argument("--no-build", action="store_true")
-    ap.add_argument("--no-install", action="store_true", help="scratch already in the tree")
     args = ap.parse_args()
 
     ns3_dir = os.path.abspath(args.ns3_dir)
@@ -155,8 +171,10 @@ def main():
     os.makedirs(args.out_dir, exist_ok=True)
     attacks = [a for a in args.attacks.split(",") if a]
 
-    if not args.no_install:
-        install_scratch(ns3_dir)
+    if args.install:
+        install_module(ns3_dir)
+    if args.configure:
+        configure(ns3_dir)
     if not args.no_build:
         build(ns3_dir)
 

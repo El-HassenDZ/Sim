@@ -11,8 +11,9 @@ that is the reference the attacked runs are measured against. It is not a
 claim of beating standard AODV; it is standard AODV under good conditions.
 """
 
-# ns-3 scratch target name (the folder name under scratch/).
-TARGET = "aodv-attacks"
+# ns-3 run target: the example program name built by the contrib module
+# (contrib/aodv-attacks/examples/aodv-attack-sim.cc).
+TARGET = "aodv-attack-sim"
 
 # Repetitions per (mode, attack): independent RNG runs for confidence
 # intervals.
