@@ -78,6 +78,38 @@ attack is the only difference, which is what makes the comparison paired.
 - **Normalised routing overhead** = AODV control packets (UDP port 654, counted at `Ipv4L3Protocol::Tx` on all nodes) / delivered data packets. Unitless.
 - **Energy** = Σ (initial − remaining) over `BasicEnergySource`, from the `WifiRadioEnergyModel`, in Joules.
 
+## Baseline tuning for high attack-free PDR
+
+The baseline parameters were chosen to remove the known sinks of AODV PDR.
+Each is a mechanism, not a measured value — **the author cannot run ns-3.48,
+so run the scenario and confirm the numbers.**
+
+| Lever | Value | Why it raises attack-free PDR |
+|---|---|---|
+| Propagation | `range` (hard disk, `commRange`=250 m) | Fixes the transmission range deterministically, so connectivity is exactly what `check_connectivity.py` validates — no txPower/fading guesswork. |
+| Field / density | 50 nodes in 800×800 m | Mean degree ≈ 11 at 250 m, **98.6 % of random placements fully connected** (verified). No partition = no unavoidable losses. |
+| Path length | 800×800 (was 1000×1000) | Shorter routes (≈2–4 hops) → less per-hop loss and lower delay. |
+| Mobility | 1–3 m/s, 10 s pause (was 1–5, 2 s) | Fewer link breaks → fewer route-rediscovery gaps where packets drop. |
+| Load | 10 × 16 kbps, 512 B | 160 kbps on an 11 Mbps channel → negligible MAC contention / queue overflow. |
+
+**Connectivity is verified without ns-3.** `runner/check_connectivity.py`
+builds the unit-disk graph (identical to `RangePropagationLossModel`) over
+hundreds of random placements and reports the fraction connected:
+
+```
+$ python3 runner/check_connectivity.py
+ range (m) |  mean degree |  fully connected | same-component pairs
+       200 |          7.6 |            80.2% |                98.3%
+       250 |         11.2 |            98.6% |                99.9%
+```
+
+At the configured 250 m the field is essentially never partitioned, so the
+attack-free PDR is bounded by mobility and load (both kept mild), not by
+topology. Switch `--propagation=logdistance` to test robustness under a
+realistic, range-varying channel (expect a lower, fading-dependent PDR).
+
+This is **standard AODV under good conditions, not a modified AODV.**
+
 ## On the objective "best performance in the baseline mode"
 
 The baseline is plain AODV in a **deliberately healthy** setting (50 nodes

@@ -121,15 +121,17 @@ main(int argc, char* argv[])
     uint32_t nMalicious = 5;
     double grayholeProb = 0.5;
     double simTime = 100.0;
-    double areaX = 1000.0;
-    double areaY = 1000.0;
+    double areaX = 800.0;   // tuned for a healthy baseline (see config.py rationale)
+    double areaY = 800.0;
     double minSpeed = 1.0;
-    double maxSpeed = 5.0;
-    double pause = 2.0;
+    double maxSpeed = 3.0;   // lower mobility -> fewer route breaks -> higher PDR
+    double pause = 10.0;     // longer pauses -> more stable topology
     uint32_t nFlows = 10;
     std::string dataRate = "16kbps";
     uint32_t packetSize = 512;
-    double txPower = 16.0; // dBm
+    double txPower = 18.0; // dBm; used by the energy model
+    double commRange = 250.0; // m; hard range for the 'range' propagation model
+    std::string propagation = "range"; // range | logdistance
     double initEnergy = 100.0; // Joules
     double attackStart = 20.0;
     uint32_t run = 1;
@@ -150,7 +152,9 @@ main(int argc, char* argv[])
     cmd.AddValue("nFlows", "number of CBR flows", nFlows);
     cmd.AddValue("dataRate", "per-flow CBR rate", dataRate);
     cmd.AddValue("packetSize", "app payload bytes", packetSize);
-    cmd.AddValue("txPower", "wifi tx power (dBm)", txPower);
+    cmd.AddValue("txPower", "wifi tx power (dBm, energy model)", txPower);
+    cmd.AddValue("commRange", "hard comm range (m) for 'range' propagation", commRange);
+    cmd.AddValue("propagation", "range | logdistance", propagation);
     cmd.AddValue("initEnergy", "initial node energy (J)", initEnergy);
     cmd.AddValue("attackStart", "attack start time (s)", attackStart);
     cmd.AddValue("run", "RNG run number (repetition)", run);
@@ -175,7 +179,23 @@ main(int argc, char* argv[])
     WifiHelper wifi;
     wifi.SetStandard(WIFI_STANDARD_80211b);
     YansWifiPhyHelper phy;
-    YansWifiChannelHelper channel = YansWifiChannelHelper::Default();
+    YansWifiChannelHelper channel;
+    channel.SetPropagationDelay("ns3::ConstantSpeedPropagationDelayModel");
+    if (propagation == "range")
+    {
+        // Deterministic disk of radius commRange: connectivity is then
+        // exactly the unit-disk graph that runner/check_connectivity.py
+        // validates, removing propagation-model guesswork from the baseline.
+        channel.AddPropagationLoss("ns3::RangePropagationLossModel",
+                                   "MaxRange", DoubleValue(commRange));
+    }
+    else
+    {
+        // Realistic (but range depends on txPower/fading): use to test
+        // robustness of the tuning, not as the primary baseline.
+        channel.AddPropagationLoss("ns3::LogDistancePropagationLossModel",
+                                   "Exponent", DoubleValue(3.0));
+    }
     phy.SetChannel(channel.Create());
     phy.Set("TxPowerStart", DoubleValue(txPower));
     phy.Set("TxPowerEnd", DoubleValue(txPower));
