@@ -35,7 +35,9 @@
 #define BLACKHOLE_AODV_H
 
 #include "ns3/ipv4-routing-protocol.h"
+#include "ns3/ipv4-routing-helper.h"
 #include "ns3/ipv4-l3-protocol.h"
+#include "ns3/object-factory.h"
 #include "ns3/socket.h"
 
 #include <map>
@@ -109,6 +111,25 @@ class BlackholeAodv : public Ipv4RoutingProtocol
     static const uint32_t AODV_PORT = 654;
     static const uint32_t FORGED_SEQNO = 0x7FFFFFFF; // very fresh
     static const uint32_t FORGED_LIFETIME_MS = 100000;
+};
+
+/**
+ * Ipv4RoutingHelper for BlackholeAodv, so the active blackhole can be
+ * installed as the node's routing protocol from the start (via
+ * InternetStackHelper::SetRoutingHelper). This avoids ever installing AODV
+ * on the attacker, which otherwise binds UDP/654 first and makes the
+ * attacker's own sockets fail to bind (observed: bind_fail>0, forged=0).
+ */
+class BlackholeAodvHelper : public Ipv4RoutingHelper
+{
+  public:
+    BlackholeAodvHelper();
+    BlackholeAodvHelper* Copy() const override;
+    Ptr<Ipv4RoutingProtocol> Create(Ptr<Node> node) const override;
+    void Set(std::string name, const AttributeValue& value);
+
+  private:
+    ObjectFactory m_factory;
 };
 
 } // namespace ns3

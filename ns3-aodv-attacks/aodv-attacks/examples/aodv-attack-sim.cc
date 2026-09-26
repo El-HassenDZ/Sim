@@ -249,17 +249,9 @@ main(int argc, char* argv[])
                               "PositionAllocator", PointerValue(posAlloc));
     mobility.Install(nodes);
 
-    // ── Internet + AODV on every node ────────────────────────────────
-    AodvHelper aodv;
-    InternetStackHelper internet;
-    internet.SetRoutingHelper(aodv);
-    internet.Install(nodes);
-
-    Ipv4AddressHelper address;
-    address.SetBase("10.0.0.0", "255.0.0.0");
-    Ipv4InterfaceContainer interfaces = address.Assign(devices);
-
-    // ── Choose attacker nodes (deterministic given the run) ──────────
+    // ── Choose attacker nodes (deterministic given the run), BEFORE the
+    //    stack is installed, so an active-blackhole node can run
+    //    BlackholeAodv from the start instead of AODV. ──────────────────
     std::vector<uint32_t> malicious;
     Ptr<UniformRandomVariable> pick = CreateObject<UniformRandomVariable>();
     pick->SetStream(1001); // fixed stream: attacker choice is stable and does
@@ -291,17 +283,61 @@ main(int argc, char* argv[])
         return attack;
     };
 
-    // ── Install the attacks (attack mode only) ───────────────────────
+    std::vector<std::string> malTypes(malicious.size());
+    std::set<uint32_t> activeBhIds; // nodes that run BlackholeAodv (attack=blackhole_rrep)
+    for (uint32_t k = 0; k < malicious.size(); ++k)
+    {
+        malTypes[k] = attackTypeFor(malicious[k], k);
+        if (malTypes[k] == "blackhole_rrep")
+        {
+            activeBhIds.insert(malicious[k]);
+        }
+    }
+
+    // ── Internet stack: AODV on every node except the active-blackhole
+    //    attackers, which run the forging BlackholeAodv agent instead.
+    //    Installing AODV on them and replacing it later left AODV's UDP/654
+    //    sockets bound, so the agent's sockets failed to bind (bind_fail>0,
+    //    forged=0). Never installing AODV on them avoids the clash. ──────
+    NodeContainer aodvNodes;
+    NodeContainer bhNodes;
+    for (uint32_t i = 0; i < nNodes; ++i)
+    {
+        if (activeBhIds.count(i))
+        {
+            bhNodes.Add(nodes.Get(i));
+        }
+        else
+        {
+            aodvNodes.Add(nodes.Get(i));
+        }
+    }
+    AodvHelper aodv;
+    InternetStackHelper internetAodv;
+    internetAodv.SetRoutingHelper(aodv);
+    internetAodv.Install(aodvNodes);
+    if (bhNodes.GetN() > 0)
+    {
+        BlackholeAodvHelper bhHelper;
+        bhHelper.Set("StartTime", TimeValue(Seconds(attackStart)));
+        InternetStackHelper internetBh;
+        internetBh.SetRoutingHelper(bhHelper);
+        internetBh.Install(bhNodes);
+    }
+
+    Ipv4AddressHelper address;
+    address.SetBase("10.0.0.0", "255.0.0.0");
+    Ipv4InterfaceContainer interfaces = address.Assign(devices);
+
+    // ── Install the wrapper/app attacks (attack mode only) ───────────
     std::vector<Ptr<MaliciousAodv>> malObjs;
     std::vector<Ptr<BlackholeAodv>> activeBh;
     std::vector<Ptr<RreqFlooder>> flooders;
-    std::vector<std::string> malTypes(malicious.size());
 
     for (uint32_t k = 0; k < malicious.size(); ++k)
     {
         uint32_t nodeId = malicious[k];
-        std::string type = attackTypeFor(nodeId, k);
-        malTypes[k] = type;
+        const std::string& type = malTypes[k];
         Ptr<Node> node = nodes.Get(nodeId);
 
         if (type == "blackhole" || type == "grayhole")
@@ -319,11 +355,11 @@ main(int argc, char* argv[])
         }
         else if (type == "blackhole_rrep")
         {
-            // ACTIVE blackhole: replace AODV entirely with the forging agent.
+            // Already installed as the node's routing protocol via the stack;
+            // just grab the pointer for the metrics.
             Ptr<Ipv4> ipv4 = node->GetObject<Ipv4>();
-            Ptr<BlackholeAodv> bh = CreateObject<BlackholeAodv>();
-            bh->SetStartTime(Seconds(attackStart));
-            ipv4->SetRoutingProtocol(bh); // node no longer runs real AODV
+            Ptr<BlackholeAodv> bh = DynamicCast<BlackholeAodv>(ipv4->GetRoutingProtocol());
+            NS_ABORT_MSG_IF(!bh, "active-blackhole node is not running BlackholeAodv");
             activeBh.push_back(bh);
         }
         else if (type == "flood")

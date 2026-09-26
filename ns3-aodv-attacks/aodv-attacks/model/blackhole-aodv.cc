@@ -12,6 +12,7 @@
 #include "ns3/ipv4-route.h"
 #include "ns3/log.h"
 #include "ns3/node.h"
+#include "ns3/nstime.h"
 #include "ns3/simulator.h"
 #include "ns3/udp-socket-factory.h"
 
@@ -27,7 +28,12 @@ BlackholeAodv::GetTypeId()
     static TypeId tid = TypeId("ns3::BlackholeAodv")
                             .SetParent<Ipv4RoutingProtocol>()
                             .SetGroupName("Internet")
-                            .AddConstructor<BlackholeAodv>();
+                            .AddConstructor<BlackholeAodv>()
+                            .AddAttribute("StartTime",
+                                          "Time before which the attacker forges nothing.",
+                                          TimeValue(Seconds(0)),
+                                          MakeTimeAccessor(&BlackholeAodv::m_startTime),
+                                          MakeTimeChecker());
     return tid;
 }
 
@@ -402,6 +408,33 @@ BlackholeAodv::PrintRoutingTable(Ptr<OutputStreamWrapper> stream, Time::Unit /*u
         << " runs BlackholeAodv (active RREP-forging attacker): "
         << "forged RREPs=" << m_forgedRreps << ", dropped packets=" << m_droppedPackets
         << "\n";
+}
+
+// ── BlackholeAodvHelper ───────────────────────────────────────────────
+
+BlackholeAodvHelper::BlackholeAodvHelper()
+{
+    m_factory.SetTypeId("ns3::BlackholeAodv");
+}
+
+BlackholeAodvHelper*
+BlackholeAodvHelper::Copy() const
+{
+    return new BlackholeAodvHelper(*this);
+}
+
+Ptr<Ipv4RoutingProtocol>
+BlackholeAodvHelper::Create(Ptr<Node> node) const
+{
+    Ptr<BlackholeAodv> proto = m_factory.Create<BlackholeAodv>();
+    node->AggregateObject(proto);
+    return proto;
+}
+
+void
+BlackholeAodvHelper::Set(std::string name, const AttributeValue& value)
+{
+    m_factory.Set(name, value);
 }
 
 } // namespace ns3
