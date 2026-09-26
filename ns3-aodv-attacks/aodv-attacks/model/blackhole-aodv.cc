@@ -11,6 +11,7 @@
 #include "ns3/inet-socket-address.h"
 #include "ns3/ipv4-route.h"
 #include "ns3/log.h"
+#include "ns3/node.h"
 #include "ns3/simulator.h"
 #include "ns3/udp-socket-factory.h"
 

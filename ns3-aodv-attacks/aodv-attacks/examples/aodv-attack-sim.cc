@@ -45,6 +45,12 @@
 #include <vector>
 
 using namespace ns3;
+// ns-3.48 energy split: model classes/containers (BasicEnergySource,
+// EnergySourceContainer, DeviceEnergyModelContainer) live in ns3::energy;
+// the helpers (BasicEnergySourceHelper, WifiRadioEnergyModelHelper) live in
+// ns3::. This using-directive lets the unqualified names below resolve in
+// either namespace, so it is robust to that split.
+using namespace ns3::energy;
 
 NS_LOG_COMPONENT_DEFINE("AodvAttackSim");
 
@@ -368,12 +374,11 @@ main(int argc, char* argv[])
     }
 
     // ── Energy model ─────────────────────────────────────────────────
-    ns3::energy::BasicEnergySourceHelper energyHelper;
+    BasicEnergySourceHelper energyHelper;
     energyHelper.Set("BasicEnergySourceInitialEnergyJ", DoubleValue(initEnergy));
-    ns3::energy::EnergySourceContainer sources = energyHelper.Install(nodes);
-    ns3::energy::WifiRadioEnergyModelHelper radioEnergy;
-    ns3::energy::DeviceEnergyModelContainer deviceModels =
-        radioEnergy.Install(devices, sources);
+    EnergySourceContainer sources = energyHelper.Install(nodes);
+    WifiRadioEnergyModelHelper radioEnergy;
+    radioEnergy.Install(devices, sources);
 
     // ── Measurement hooks ────────────────────────────────────────────
     Config::ConnectWithoutContext("/NodeList/*/$ns3::Ipv4L3Protocol/Tx",
@@ -434,8 +439,8 @@ main(int argc, char* argv[])
     double energyConsumed = 0.0;
     for (uint32_t i = 0; i < sources.GetN(); ++i)
     {
-        Ptr<ns3::energy::BasicEnergySource> src =
-            DynamicCast<ns3::energy::BasicEnergySource>(sources.Get(i));
+        Ptr<BasicEnergySource> src =
+            DynamicCast<BasicEnergySource>(sources.Get(i));
         energyConsumed += src->GetInitialEnergy() - src->GetRemainingEnergy();
     }
 
